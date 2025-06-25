@@ -16,6 +16,8 @@ from textual.screen import Screen
 from textual.widgets import Button, Input, Static
 
 from ..config import Config
+from ..services import OllamaClient, StorageService
+from ..services.storage import ChatMessage
 from ..widgets import MessageList, Sidebar
 
 
@@ -79,7 +81,10 @@ class ChatScreen(Screen):
         """Initialize chat screen."""
         super().__init__(**kwargs)
         self.config = config
-        self.current_session_id: Optional[str] = None
+        self.ollama_client = OllamaClient(config)
+        self.storage_service = StorageService(config)
+        self.current_session = None
+        self.current_model: Optional[str] = None
         self.is_generating = False
         
     def compose(self) -> ComposeResult:
@@ -97,7 +102,7 @@ class ChatScreen(Screen):
                     
                 # Input area
                 with Vertical(classes="input-area"):
-                    yield Static("Ready", id="status", classes="status-bar")
+                    yield Static("Initializing...", id="status", classes="status-bar")
                     with Horizontal(classes="input-container"):
                         yield Input(
                             placeholder="Type your message here... (Enter to send, Shift+Enter for new line)",
@@ -108,12 +113,40 @@ class ChatScreen(Screen):
     
     async def on_mount(self) -> None:
         """Called when screen is mounted."""
+        # Initialize services
+        await self._initialize_services()
+        
         # Focus the input field
         self.query_one("#chat_input", Input).focus()
         
-        # Initialize with a new session
+        # Start with a new session
         await self.new_chat()
         
+    async def _initialize_services(self) -> None:
+        """Initialize Ollama and check availability."""
+        self.update_status("Checking Ollama connection...")
+        
+        try:
+            is_available = await self.ollama_client.is_available()
+            if not is_available:
+                self.update_status("⚠️  Ollama not available - check if server is running")
+                self.notify("Ollama server not available. Please start Ollama.", severity="warning")
+                return
+            
+            # Get default model
+            self.current_model = await self.ollama_client.get_default_model()
+            if not self.current_model:
+                self.update_status("⚠️  No models found - please pull a model in Ollama")
+                self.notify("No Ollama models found. Please pull a model first.", severity="warning")
+                return
+            
+            self.update_status(f"✅ Connected to Ollama - using {self.current_model}")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize Ollama: {e}")
+            self.update_status(f"❌ Ollama error: {e}")
+            self.notify(f"Ollama initialization failed: {e}", severity="error")
+    
     @on(Input.Submitted, "#chat_input")
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle message input submission."""
@@ -143,8 +176,14 @@ class ChatScreen(Screen):
             message_list = self.query_one("#messages", MessageList)
             await message_list.add_message("user", message)
             
+            # Add to session
+            if self.current_session:
+                user_msg = ChatMessage(role="user", content=message, model=self.current_model)
+                self.current_session.add_message(user_msg)
+                await self.storage_service.save_session(self.current_session)
+            
             # Start generating response
-            self.update_status("Generating response...")
+            self.update_status("🤖 Generating response...")
             await self.generate_response(message)
             
         except Exception as e:
@@ -156,21 +195,70 @@ class ChatScreen(Screen):
     
     @work(exclusive=True)
     async def generate_response(self, message: str) -> None:
-        """Generate response from Ollama (placeholder implementation)."""
+        """Generate response from Ollama with streaming."""
         try:
-            # TODO: Implement actual Ollama integration
-            # For now, just simulate a response
-            await asyncio.sleep(1)  # Simulate processing time
+            if not self.current_model:
+                await self._handle_no_model()
+                return
             
-            # Add assistant response
+            # Prepare messages for Ollama
+            messages = []
+            if self.current_session:
+                # Convert session messages to Ollama format
+                for msg in self.current_session.messages:
+                    messages.append({
+                        "role": msg.role,
+                        "content": msg.content
+                    })
+            
+            # Add system prompt if this is the first message
+            if len(messages) == 1:  # Only user message
+                system_msg = {
+                    "role": "system",
+                    "content": "You are a helpful AI assistant. Provide clear, concise, and accurate responses."
+                }
+                messages.insert(0, system_msg)
+            
+            # Start streaming response
             message_list = self.query_one("#messages", MessageList)
-            response = f"Echo: {message}"  # Placeholder response
-            await message_list.add_message("assistant", response)
+            response_content = ""
+            
+            # Add initial assistant message
+            await message_list.add_message("assistant", "")
+            
+            # Stream the response
+            async for chunk in self.ollama_client.chat_completion(
+                model=self.current_model,
+                messages=messages,
+                stream=True
+            ):
+                response_content += chunk
+                # Update the last message with accumulated content
+                await message_list.update_last_message(response_content)
+            
+            # Save complete response to session
+            if self.current_session and response_content:
+                assistant_msg = ChatMessage(
+                    role="assistant", 
+                    content=response_content,
+                    model=self.current_model
+                )
+                self.current_session.add_message(assistant_msg)
+                await self.storage_service.save_session(self.current_session)
             
         except Exception as e:
             logger.error(f"Error generating response: {e}")
             message_list = self.query_one("#messages", MessageList)
             await message_list.add_message("assistant", f"Error: {e}")
+    
+    async def _handle_no_model(self) -> None:
+        """Handle case where no model is available."""
+        message_list = self.query_one("#messages", MessageList)
+        error_msg = ("No Ollama model available. Please:\n"
+                    "1. Make sure Ollama is running\n"
+                    "2. Pull a model (e.g., `ollama pull llama2`)\n"
+                    "3. Restart lit-tui")
+        await message_list.add_message("assistant", error_msg)
     
     def update_status(self, message: str) -> None:
         """Update status bar."""
@@ -179,28 +267,72 @@ class ChatScreen(Screen):
     
     async def new_chat(self) -> None:
         """Start a new chat session."""
-        # TODO: Implement session management
-        self.current_session_id = f"session_{asyncio.get_event_loop().time()}"
-        
-        # Clear messages
-        message_list = self.query_one("#messages", MessageList)
-        await message_list.clear()
-        
-        # Add welcome message
-        await message_list.add_message(
-            "assistant", 
-            "Hello! I'm your AI assistant. How can I help you today?"
-        )
-        
-        self.update_status(f"New session: {self.current_session_id}")
-        self.notify("Started new chat session")
+        try:
+            # Create new session
+            self.current_session = await self.storage_service.create_session(
+                model=self.current_model
+            )
+            
+            # Clear messages
+            message_list = self.query_one("#messages", MessageList)
+            await message_list.clear()
+            
+            # Add welcome message
+            welcome_msg = "Hello! I'm your AI assistant. How can I help you today?"
+            await message_list.add_message("assistant", welcome_msg)
+            
+            # Add welcome message to session
+            if self.current_session:
+                assistant_msg = ChatMessage(
+                    role="assistant", 
+                    content=welcome_msg,
+                    model=self.current_model
+                )
+                self.current_session.add_message(assistant_msg)
+                await self.storage_service.save_session(self.current_session)
+            
+            self.update_status(f"New session: {self.current_session.session_id[:8]}...")
+            self.notify("Started new chat session")
+            
+        except Exception as e:
+            logger.error(f"Error creating new session: {e}")
+            self.notify(f"Error creating session: {e}", severity="error")
     
     async def save_session(self) -> None:
         """Save current session."""
-        # TODO: Implement session saving
-        self.notify("Session saved (not implemented yet)")
+        try:
+            if self.current_session:
+                await self.storage_service.save_session(self.current_session)
+                self.notify(f"Session saved: {self.current_session.title}")
+            else:
+                self.notify("No session to save", severity="warning")
+        except Exception as e:
+            logger.error(f"Error saving session: {e}")
+            self.notify(f"Error saving session: {e}", severity="error")
     
     async def open_session(self) -> None:
         """Open existing session."""
-        # TODO: Implement session loading
-        self.notify("Open session (not implemented yet)")
+        # TODO: Implement session selection dialog
+        self.notify("Session selection coming soon!")
+    
+    async def change_model(self, model_name: str) -> None:
+        """Change the current model."""
+        try:
+            # Verify model is available
+            models = await self.ollama_client.get_models()
+            if not any(m.name == model_name for m in models):
+                self.notify(f"Model {model_name} not found", severity="error")
+                return
+            
+            self.current_model = model_name
+            self.update_status(f"✅ Using model: {model_name}")
+            self.notify(f"Switched to model: {model_name}")
+            
+            # Update session model
+            if self.current_session:
+                self.current_session.model = model_name
+                await self.storage_service.save_session(self.current_session)
+                
+        except Exception as e:
+            logger.error(f"Error changing model: {e}")
+            self.notify(f"Error changing model: {e}", severity="error")

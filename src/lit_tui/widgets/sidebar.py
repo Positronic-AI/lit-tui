@@ -143,26 +143,50 @@ class Sidebar(Widget):
     async def on_session_selected(self, event: ListView.Selected) -> None:
         """Handle session selection."""
         if isinstance(event.item, SessionItem):
-            # TODO: Load selected session
-            self.app.notify(f"Loading session: {event.item.title}")
+            # Load selected session
+            if hasattr(self.screen, 'storage_service') and hasattr(self.screen, 'load_session'):
+                try:
+                    await self.screen.load_session(event.item.session_id)
+                    self.app.notify(f"Loaded session: {event.item.title}")
+                except Exception as e:
+                    logger.error(f"Error loading session: {e}")
+                    self.app.notify(f"Error loading session: {e}", severity="error")
+            else:
+                self.app.notify(f"Loading session: {event.item.title} (not implemented)")
     
     async def load_sessions(self) -> None:
         """Load sessions from storage."""
         try:
-            # TODO: Implement actual session loading
-            # For now, add some placeholder sessions
-            session_list = self.query_one("#session_list", ListView)
-            
-            placeholder_sessions = [
-                {"id": "1", "title": "Previous Chat 1"},
-                {"id": "2", "title": "Previous Chat 2"},
-                {"id": "3", "title": "Previous Chat 3"},
-            ]
-            
-            for session in placeholder_sessions:
-                item = SessionItem(session["id"], session["title"])
-                item.update(f"💬 {session['title']}")
-                await session_list.append(item)
+            # Get storage service from screen
+            if hasattr(self.screen, 'storage_service'):
+                storage_service = self.screen.storage_service
+                sessions = await storage_service.list_sessions(limit=10)
+                
+                session_list = self.query_one("#session_list", ListView)
+                
+                # Clear existing items
+                session_list.clear()
+                
+                # Add sessions to list
+                for session_data in sessions:
+                    item = SessionItem(session_data["session_id"], session_data["title"])
+                    item.update(f"💬 {session_data['title']}")
+                    await session_list.append(item)
+                    
+            else:
+                # Fallback to placeholder sessions if no storage service
+                session_list = self.query_one("#session_list", ListView)
+                
+                placeholder_sessions = [
+                    {"id": "1", "title": "Previous Chat 1"},
+                    {"id": "2", "title": "Previous Chat 2"},
+                    {"id": "3", "title": "Previous Chat 3"},
+                ]
+                
+                for session in placeholder_sessions:
+                    item = SessionItem(session["id"], session["title"])
+                    item.update(f"💬 {session['title']}")
+                    await session_list.append(item)
                 
         except Exception as e:
             logger.error(f"Error loading sessions: {e}")
