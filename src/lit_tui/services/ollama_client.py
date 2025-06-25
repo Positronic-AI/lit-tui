@@ -78,9 +78,19 @@ class OllamaClient:
             response = await self.client.list()
             models = []
             
+            # Debug: print the raw response structure
+            logger.debug(f"Raw Ollama response: {response}")
+            
             for model_data in response.get('models', []):
+                # Handle both direct name field and nested structure
+                model_name = model_data.get('model') or model_data.get('name', '')
+                
+                if not model_name:
+                    logger.warning(f"Model data missing name: {model_data}")
+                    continue
+                
                 model = OllamaModel(
-                    name=model_data.get('name', ''),
+                    name=model_name,
                     size=model_data.get('size', 0),
                     digest=model_data.get('digest', ''),
                     details=model_data.get('details', {})
