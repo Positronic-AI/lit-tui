@@ -1,0 +1,40 @@
+{
+  "ollama": {
+    "host": "http://localhost:11434",
+    "timeout": 30,
+    "default_model": "llama2"
+  },
+  "ui": {
+    "theme": "dark",
+    "font_size": "medium",
+    "show_token_count": true,
+    "auto_scroll": true,
+    "show_timestamps": true
+  },
+  "storage": {
+    "max_sessions": 100,
+    "auto_save": true,
+    "session_timeout_days": 30
+  },
+  "mcp": {
+    "enabled": true,
+    "servers": [
+      {
+        "name": "filesystem",
+        "command": "mcp-server-filesystem",
+        "args": ["--root", "/home/user/projects"],
+        "env": {},
+        "timeout": 10
+      },
+      {
+        "name": "git",
+        "command": "mcp-server-git", 
+        "args": [],
+        "env": {},
+        "timeout": 10
+      }
+    ],
+    "timeout": 5
+  },
+  "debug": false
+}

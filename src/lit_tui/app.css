@@ -1,0 +1,116 @@
+/* LIT TUI CSS Styles */
+
+/* Basic app styling */
+Screen {
+    background: $background;
+    color: $text;
+}
+
+/* Header and footer */
+Header {
+    background: $primary;
+    color: $text;
+    text-style: bold;
+}
+
+Footer {
+    background: $primary;
+    color: $text;
+}
+
+/* General layout */
+.sidebar {
+    width: 25%;
+    background: $surface;
+    border-right: thick $primary;
+}
+
+.main-area {
+    width: 75%;
+}
+
+/* Chat area */
+.chat-area {
+    height: 1fr;
+    background: $background;
+}
+
+.input-area {
+    height: auto;
+    background: $surface;
+    border-top: thick $primary;
+    padding: 1;
+}
+
+.input-container {
+    layout: horizontal;
+    height: auto;
+}
+
+.chat-input {
+    width: 1fr;
+    margin-right: 1;
+}
+
+.send-button {
+    width: auto;
+}
+
+.status-bar {
+    height: 1;
+    background: $primary;
+    color: $text;
+    text-align: center;
+}
+
+/* Sidebar styling */
+.sidebar-section {
+    margin: 1 0;
+    border: round $primary;
+    padding: 1;
+}
+
+.sidebar-title {
+    text-style: bold;
+    color: $accent;
+    margin-bottom: 1;
+}
+
+.model-info {
+    background: $primary 20%;
+    padding: 1;
+    border: round $primary;
+    margin: 1 0;
+}
+
+.session-list {
+    height: 1fr;
+    border: round $primary;
+}
+
+.sidebar-button {
+    width: 100%;
+    margin: 1 0;
+}
+
+/* Message styling */
+.message-user {
+    background: $accent 10%;
+    margin: 1 0;
+    padding: 1;
+    border-left: thick $accent;
+}
+
+.message-assistant {
+    background: $primary 10%;
+    margin: 1 0;
+    padding: 1;
+    border-left: thick $primary;
+}
+
+.message-system {
+    background: $warning 10%;
+    margin: 1 0;
+    padding: 1;
+    border-left: thick $warning;
+}
