@@ -16,7 +16,7 @@ from textual.screen import Screen
 from textual.widgets import Button, Input, Static
 
 from ..config import Config
-from ..services import OllamaClient, StorageService
+from ..services import OllamaClient, StorageService, MCPClient
 from ..services.storage import ChatMessage
 from ..widgets import MessageList, Sidebar
 
@@ -83,6 +83,7 @@ class ChatScreen(Screen):
         self.config = config
         self.ollama_client = OllamaClient(config)
         self.storage_service = StorageService(config)
+        self.mcp_client = MCPClient(config)
         self.current_session = None
         self.current_model: Optional[str] = None
         self.is_generating = False
@@ -123,10 +124,11 @@ class ChatScreen(Screen):
         await self.new_chat()
         
     async def _initialize_services(self) -> None:
-        """Initialize Ollama and check availability."""
+        """Initialize Ollama and MCP services."""
         self.update_status("Checking Ollama connection...")
         
         try:
+            # Initialize Ollama
             is_available = await self.ollama_client.is_available()
             if not is_available:
                 self.update_status("⚠️  Ollama not available - check if server is running")
@@ -140,12 +142,24 @@ class ChatScreen(Screen):
                 self.notify("No Ollama models found. Please pull a model first.", severity="warning")
                 return
             
-            self.update_status(f"✅ Connected to Ollama - using {self.current_model}")
+            self.update_status("Initializing MCP tools...")
+            
+            # Initialize MCP client
+            mcp_success = await self.mcp_client.initialize()
+            if mcp_success:
+                tools = self.mcp_client.get_available_tools()
+                tool_count = len(tools)
+                self.update_status(f"✅ Connected - {self.current_model} + {tool_count} MCP tools")
+                if tool_count > 0:
+                    self.notify(f"Ready with {tool_count} MCP tools available")
+            else:
+                self.update_status(f"✅ Connected to Ollama - using {self.current_model}")
+                self.notify("Ollama connected, MCP tools unavailable")
             
         except Exception as e:
-            logger.error(f"Failed to initialize Ollama: {e}")
-            self.update_status(f"❌ Ollama error: {e}")
-            self.notify(f"Ollama initialization failed: {e}", severity="error")
+            logger.error(f"Failed to initialize services: {e}")
+            self.update_status(f"❌ Initialization error: {e}")
+            self.notify(f"Service initialization failed: {e}", severity="error")
     
     @on(Input.Submitted, "#chat_input")
     async def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -213,9 +227,24 @@ class ChatScreen(Screen):
             
             # Add system prompt if this is the first message
             if len(messages) == 1:  # Only user message
+                # Include MCP tools information in system prompt
+                tools = self.mcp_client.get_available_tools()
+                if tools:
+                    tool_descriptions = []
+                    for tool in tools:
+                        tool_descriptions.append(f"- {tool.name}: {tool.description}")
+                    
+                    system_content = (
+                        "You are a helpful AI assistant. Provide clear, concise, and accurate responses.\n\n"
+                        f"You have access to the following tools:\n" + "\n".join(tool_descriptions) + "\n\n"
+                        "When you need to use a tool, clearly explain what you're doing and why."
+                    )
+                else:
+                    system_content = "You are a helpful AI assistant. Provide clear, concise, and accurate responses."
+                
                 system_msg = {
                     "role": "system",
-                    "content": "You are a helpful AI assistant. Provide clear, concise, and accurate responses."
+                    "content": system_content
                 }
                 messages.insert(0, system_msg)
             
@@ -336,3 +365,61 @@ class ChatScreen(Screen):
         except Exception as e:
             logger.error(f"Error changing model: {e}")
             self.notify(f"Error changing model: {e}", severity="error")
+    
+    async def get_mcp_status(self) -> str:
+        """Get MCP status for display."""
+        try:
+            health = await self.mcp_client.health_check()
+            if not health["enabled"]:
+                return "MCP: Disabled"
+            
+            running_servers = sum(1 for server in health["servers"].values() if server["running"])
+            total_servers = len(health["servers"])
+            total_tools = health["total_tools"]
+            
+            if running_servers == 0:
+                return "MCP: No servers"
+            elif total_tools == 0:
+                return f"MCP: {running_servers} servers, no tools"
+            else:
+                return f"MCP: {total_tools} tools from {running_servers} servers"
+                
+        except Exception as e:
+            logger.error(f"Error getting MCP status: {e}")
+            return "MCP: Error"
+    
+    async def call_mcp_tool(self, tool_name: str, arguments: dict) -> Optional[str]:
+        """Call an MCP tool and return the result."""
+        try:
+            self.update_status(f"🔧 Calling tool: {tool_name}")
+            
+            result = await self.mcp_client.call_tool(tool_name, arguments)
+            
+            if result:
+                if "error" in result:
+                    error_msg = f"Tool error: {result['error']}"
+                    logger.error(error_msg)
+                    return error_msg
+                else:
+                    # Extract content from result
+                    if "content" in result:
+                        if isinstance(result["content"], list):
+                            # Handle multiple content items
+                            content_parts = []
+                            for item in result["content"]:
+                                if isinstance(item, dict) and "text" in item:
+                                    content_parts.append(item["text"])
+                            return "\n".join(content_parts)
+                        else:
+                            return str(result["content"])
+                    else:
+                        return str(result)
+            else:
+                return f"Tool {tool_name} returned no result"
+                
+        except Exception as e:
+            error_msg = f"Error calling tool {tool_name}: {e}"
+            logger.error(error_msg)
+            return error_msg
+        finally:
+            self.update_status("Ready")

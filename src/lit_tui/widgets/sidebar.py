@@ -130,8 +130,25 @@ class Sidebar(Widget):
     @on(Button.Pressed, "#mcp_tools")
     async def on_mcp_tools(self, event: Button.Pressed) -> None:
         """Handle MCP tools button."""
-        # TODO: Implement MCP tools management
-        self.app.notify("MCP tools management coming soon!")
+        # Show MCP status and available tools
+        if hasattr(self.screen, 'mcp_client'):
+            try:
+                health = await self.screen.mcp_client.health_check()
+                tools = self.screen.mcp_client.get_available_tools()
+                
+                if health["enabled"] and tools:
+                    tool_names = [f"• {tool.name} - {tool.description}" for tool in tools[:5]]
+                    if len(tools) > 5:
+                        tool_names.append(f"... and {len(tools) - 5} more")
+                    
+                    status_msg = f"MCP Tools Available:\n" + "\n".join(tool_names)
+                    self.app.notify(status_msg)
+                else:
+                    self.app.notify("No MCP tools available. Check configuration.", severity="warning")
+            except Exception as e:
+                self.app.notify(f"MCP error: {e}", severity="error")
+        else:
+            self.app.notify("MCP tools management coming soon!")
     
     @on(Button.Pressed, "#about")
     async def on_about(self, event: Button.Pressed) -> None:

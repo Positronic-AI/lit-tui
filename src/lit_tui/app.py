@@ -68,6 +68,9 @@ class LitTuiApp(App):
         
     async def action_quit(self) -> None:
         """Handle quit action."""
+        # Shutdown MCP services if available
+        if hasattr(self.screen, 'mcp_client'):
+            await self.screen.mcp_client.shutdown()
         await self.exit()
         
     async def action_new_chat(self) -> None:
