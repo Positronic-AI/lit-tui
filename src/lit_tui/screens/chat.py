@@ -18,6 +18,8 @@ from textual.widgets import Button, Input, Static
 from ..config import Config
 from ..services import OllamaClient, StorageService, MCPClient
 from ..services.storage import ChatMessage
+from ..services.prompt_composer import PromptComposer
+from ..services.tool_processor import ToolCallProcessor
 from ..widgets import MessageList, Sidebar
 
 
@@ -34,8 +36,7 @@ class ChatScreen(Screen):
     
     .sidebar {
         width: 25%;
-        background: $surface;
-        border-right: thick $primary;
+        background: $background;
     }
     
     .main-area {
@@ -50,8 +51,7 @@ class ChatScreen(Screen):
     
     .input-area {
         height: auto;
-        background: $surface;
-        border-top: thick $primary;
+        background: $background;
         padding: 1;
     }
     
@@ -84,6 +84,8 @@ class ChatScreen(Screen):
         self.ollama_client = OllamaClient(config)
         self.storage_service = StorageService(config)
         self.mcp_client = MCPClient(config)
+        self.prompt_composer = PromptComposer(config)
+        self.tool_processor = ToolCallProcessor(self.mcp_client, self.ollama_client)
         self.current_session = None
         self.current_model: Optional[str] = None
         self.is_generating = False
@@ -99,14 +101,14 @@ class ChatScreen(Screen):
             with Vertical(classes="main-area"):
                 # Chat messages area
                 with Vertical(classes="chat-area"):
-                    yield MessageList(id="messages")
+                    yield MessageList(config=self.config, id="messages")
                     
                 # Input area
                 with Vertical(classes="input-area"):
                     yield Static("Initializing...", id="status", classes="status-bar")
                     with Horizontal(classes="input-container"):
                         yield Input(
-                            placeholder="Type your message here... (Enter to send, Shift+Enter for new line)",
+                            placeholder="Type your message here... (Enter to send)",
                             id="chat_input",
                             classes="chat-input"
                         )
@@ -132,15 +134,30 @@ class ChatScreen(Screen):
             is_available = await self.ollama_client.is_available()
             if not is_available:
                 self.update_status("⚠️  Ollama not available - check if server is running")
-                self.notify("Ollama server not available. Please start Ollama.", severity="warning")
                 return
             
-            # Get default model
-            self.current_model = await self.ollama_client.get_default_model()
-            if not self.current_model:
+            # Load available models and restore last model
+            models = await self.ollama_client.get_models()
+            if not models:
                 self.update_status("⚠️  No models found - please pull a model in Ollama")
-                self.notify("No Ollama models found. Please pull a model first.", severity="warning")
                 return
+            
+            # Try to restore last used model
+            last_model = await self.storage_service.load_last_model()
+            if last_model and any(model.name == last_model for model in models):
+                self.current_model = last_model
+                logger.info(f"🔄 Restored last model: {last_model}")
+            else:
+                # Use first available model as default
+                self.current_model = models[0].name
+                logger.info(f"📋 Using default model: {self.current_model}")
+                
+            # Update sidebar model display
+            try:
+                sidebar = self.query_one(Sidebar)
+                sidebar.update_model_display(self.current_model)
+            except Exception as e:
+                logger.warning(f"Could not update model display: {e}")
             
             self.update_status("Initializing MCP tools...")
             
@@ -151,10 +168,10 @@ class ChatScreen(Screen):
                 tool_count = len(tools)
                 self.update_status(f"✅ Connected - {self.current_model} + {tool_count} MCP tools")
                 if tool_count > 0:
-                    self.notify(f"Ready with {tool_count} MCP tools available")
+                    self.update_status(f"✅ Ready with {tool_count} MCP tools available")
             else:
                 self.update_status(f"✅ Connected to Ollama - using {self.current_model}")
-                self.notify("Ollama connected, MCP tools unavailable")
+                # MCP tools unavailable - already shown in model status
             
         except Exception as e:
             logger.error(f"Failed to initialize services: {e}")
@@ -165,7 +182,7 @@ class ChatScreen(Screen):
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle message input submission."""
         if not self.is_generating and event.value.strip():
-            await self.send_message(event.value.strip())
+            self.send_message(event.value.strip())
             event.input.value = ""
             
     @on(Button.Pressed, "#send_button")
@@ -173,10 +190,11 @@ class ChatScreen(Screen):
         """Handle send button press."""
         chat_input = self.query_one("#chat_input", Input)
         if not self.is_generating and chat_input.value.strip():
-            await self.send_message(chat_input.value.strip())
+            self.send_message(chat_input.value.strip())
             chat_input.value = ""
             chat_input.focus()
     
+    @work(exclusive=True)
     async def send_message(self, message: str) -> None:
         """Send a message and get response."""
         if self.is_generating:
@@ -198,7 +216,7 @@ class ChatScreen(Screen):
             
             # Start generating response
             self.update_status("🤖 Generating response...")
-            await self.generate_response(message)
+            self.generate_response(message)
             
         except Exception as e:
             logger.error(f"Error sending message: {e}")
@@ -209,8 +227,12 @@ class ChatScreen(Screen):
     
     @work(exclusive=True)
     async def generate_response(self, message: str) -> None:
-        """Generate response from Ollama with streaming."""
+        """Generate response from Ollama with streaming and tool support."""
         try:
+            # Reset tool processor for this conversation
+            if self.tool_processor:
+                self.tool_processor.reset_for_new_conversation()
+                
             if not self.current_model:
                 await self._handle_no_model()
                 return
@@ -225,45 +247,131 @@ class ChatScreen(Screen):
                         "content": msg.content
                     })
             
-            # Add system prompt if this is the first message
-            if len(messages) == 1:  # Only user message
-                # Include MCP tools information in system prompt
-                tools = self.mcp_client.get_available_tools()
-                if tools:
-                    tool_descriptions = []
-                    for tool in tools:
-                        tool_descriptions.append(f"- {tool.name}: {tool.description}")
-                    
-                    system_content = (
-                        "You are a helpful AI assistant. Provide clear, concise, and accurate responses.\n\n"
-                        f"You have access to the following tools:\n" + "\n".join(tool_descriptions) + "\n\n"
-                        "When you need to use a tool, clearly explain what you're doing and why."
-                    )
-                else:
-                    system_content = "You are a helpful AI assistant. Provide clear, concise, and accurate responses."
+            # Get available tools
+            available_tools = self.mcp_client.get_available_tools() if self.mcp_client else []
+            
+            # Compose intelligent system prompt - we need this for tool usage
+            # Check if we already have a system message
+            has_system_message = any(msg.get("role") == "system" for msg in messages)
+            
+            if not has_system_message:
+                logger.info(f"🧠 Composing system prompt with {len(available_tools)} tools")
+                for tool in available_tools[:3]:  # Log first 3 tools
+                    logger.info(f"   Tool: {tool.name} - {tool.description}")
+                
+                prompt_response = self.prompt_composer.compose_system_prompt(
+                    user_message=message,
+                    mcp_tools=available_tools,  # Pass actual MCPTool objects
+                    messages=messages,
+                    context={"model": self.current_model}
+                )
+                
+                logger.info(f"📝 System prompt length: {len(prompt_response['system_prompt'])} chars")
+                logger.info(f"📝 System prompt preview: {prompt_response['system_prompt'][:300]}...")
+                
+                # Store system prompt info for logging (remove separate file logging)
+                system_prompt_info = prompt_response.copy()
                 
                 system_msg = {
                     "role": "system",
-                    "content": system_content
+                    "content": prompt_response["system_prompt"]
                 }
                 messages.insert(0, system_msg)
+                
+                # Log prompt composition results
+                if prompt_response.get("fallback"):
+                    logger.info("📝 Using fallback system prompt")
+                else:
+                    logger.info(f"✅ Enhanced system prompt generated")
+                    if prompt_response.get("applied_modules"):
+                        logger.info(f"Applied modules: {prompt_response['applied_modules']}")
+            else:
+                logger.info("💬 System message already exists, skipping system prompt generation")
+                system_prompt_info = None
             
             # Start streaming response
             message_list = self.query_one("#messages", MessageList)
-            response_content = ""
             
             # Add initial assistant message
             await message_list.add_message("assistant", "")
             
-            # Stream the response
-            async for chunk in self.ollama_client.chat_completion(
-                model=self.current_model,
-                messages=messages,
-                stream=True
-            ):
-                response_content += chunk
-                # Update the last message with accumulated content
+            # For streaming, we'll use a different approach
+            # Store current accumulated response for periodic updates
+            self._streaming_response = ""
+            self._last_stream_update = ""
+            
+            def stream_callback(chunk: str):
+                if chunk:
+                    self._streaming_response += chunk
+                    
+            # Start a background task to update UI periodically
+            async def update_streaming():
+                while self.is_generating:
+                    if self._streaming_response != self._last_stream_update:
+                        await message_list.update_last_message(self._streaming_response)
+                        self._last_stream_update = self._streaming_response
+                    await asyncio.sleep(0.1)  # Update every 100ms
+            
+            # Start the periodic update task
+            update_task = asyncio.create_task(update_streaming())
+                    
+            # Process with tools if available (lit-platform approach)
+            if available_tools:
+                # Check model compatibility before processing with tools
+                from ..services.model_compatibility import supports_tools, suggest_alternative_model
+                
+                if not supports_tools(self.current_model):
+                    # Model doesn't support tools - show helpful error
+                    logger.warning(f"❌ Model {self.current_model} does not support tool calling")
+                    
+                    # Get available models for suggestion
+                    available_model_names = [model["name"] for model in await self.ollama_client.list_models()]
+                    suggested_model = suggest_alternative_model(self.current_model, available_model_names)
+                    
+                    error_message = f"❌ **Model Compatibility Issue**\n\n"
+                    error_message += f"The model `{self.current_model}` does not support tool calling. "
+                    error_message += f"I have {len(available_tools)} tools available (file operations, etc.) but this model cannot use them.\n\n"
+                    
+                    if suggested_model:
+                        error_message += f"💡 **Suggestion**: Switch to `{suggested_model}` or another compatible model.\n\n"
+                        error_message += f"**Compatible models include**: qwen3:latest, llama3.1:latest, mistral:latest\n"
+                        error_message += f"**Incompatible models**: codellama (all versions), codegemma, starcoder\n\n"
+                    
+                    error_message += f"You can change the model using the sidebar or try your request with a different model."
+                    
+                    # Update the message directly
+                    await message_list.update_last_message(error_message)
+                    
+                    # Stop the periodic update task
+                    update_task.cancel()
+                    return
+                
+                logger.info(f"🔧 Processing with {len(available_tools)} tools available (system prompt approach)")
+                response_content = await self.tool_processor.process_with_tools(
+                    model=self.current_model,
+                    messages=messages,
+                    tools=[],  # Don't pass tools to Ollama - they're in the system prompt
+                    stream_callback=stream_callback,
+                    system_prompt_info=system_prompt_info
+                )
+                # Final update with complete response
                 await message_list.update_last_message(response_content)
+                await message_list.update_last_message(response_content)
+            else:
+                # No tools, use standard completion - this should already work
+                logger.info("💬 Processing without tools")
+                response_content = ""
+                async for chunk in self.ollama_client.chat_completion(
+                    model=self.current_model,
+                    messages=messages,
+                    stream=True
+                ):
+                    response_content += chunk
+                    if chunk:
+                        await message_list.add_chunk_to_last_message(chunk)
+            
+            # Stop the periodic update task
+            update_task.cancel()
             
             # Save complete response to session
             if self.current_session and response_content:
@@ -274,6 +382,11 @@ class ChatScreen(Screen):
                 )
                 self.current_session.add_message(assistant_msg)
                 await self.storage_service.save_session(self.current_session)
+            
+        except Exception as e:
+            logger.error(f"Error generating response: {e}")
+            message_list = self.query_one("#messages", MessageList)
+            await message_list.add_message("assistant", f"Error: {e}")
             
         except Exception as e:
             logger.error(f"Error generating response: {e}")
@@ -320,6 +433,10 @@ class ChatScreen(Screen):
                 self.current_session.add_message(assistant_msg)
                 await self.storage_service.save_session(self.current_session)
             
+            # Refresh the sidebar session list
+            sidebar = self.query_one(Sidebar)
+            await sidebar.load_sessions()
+            
             self.update_status(f"New session: {self.current_session.session_id[:8]}...")
             self.notify("Started new chat session")
             
@@ -327,17 +444,33 @@ class ChatScreen(Screen):
             logger.error(f"Error creating new session: {e}")
             self.notify(f"Error creating session: {e}", severity="error")
     
-    async def save_session(self) -> None:
-        """Save current session."""
+    async def load_session(self, session_id: str) -> None:
+        """Load a specific session by ID."""
         try:
-            if self.current_session:
-                await self.storage_service.save_session(self.current_session)
-                self.notify(f"Session saved: {self.current_session.title}")
-            else:
-                self.notify("No session to save", severity="warning")
+            session = await self.storage_service.load_session(session_id)
+            if not session:
+                self.notify(f"Session not found: {session_id}", severity="error")
+                return
+            
+            self.current_session = session
+            
+            # Clear and reload messages
+            message_list = self.query_one("#messages", MessageList)
+            await message_list.clear()
+            
+            # Add all messages from the session
+            for msg in session.messages:
+                await message_list.add_message(msg.role, msg.content, msg.timestamp)
+            
+            # Update model if different
+            if session.model and session.model != self.current_model:
+                await self.change_model(session.model)
+            
+            self.update_status(f"Loaded session: {session.title}")
+            
         except Exception as e:
-            logger.error(f"Error saving session: {e}")
-            self.notify(f"Error saving session: {e}", severity="error")
+            logger.error(f"Error loading session {session_id}: {e}")
+            self.notify(f"Error loading session: {e}", severity="error")
     
     async def open_session(self) -> None:
         """Open existing session."""
@@ -354,8 +487,19 @@ class ChatScreen(Screen):
                 return
             
             self.current_model = model_name
+            
+            # Save as last used model
+            await self.storage_service.save_last_model(model_name)
+            
             self.update_status(f"✅ Using model: {model_name}")
             self.notify(f"Switched to model: {model_name}")
+            
+            # Update sidebar model display
+            try:
+                sidebar = self.query_one(Sidebar)
+                sidebar.update_model_display(self.current_model)
+            except Exception as e:
+                logger.warning(f"Could not update sidebar model display: {e}")
             
             # Update session model
             if self.current_session:

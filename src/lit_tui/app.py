@@ -13,7 +13,7 @@ from typing import Optional
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.widgets import Header, Footer
+from textual.widgets import Footer
 
 from .config import Config, load_config
 from .screens.chat import ChatScreen
@@ -30,7 +30,6 @@ class LitTuiApp(App):
         Binding("ctrl+q", "quit", "Quit"),
         Binding("ctrl+n", "new_chat", "New Chat"),
         Binding("ctrl+o", "open_session", "Open"),
-        Binding("ctrl+s", "save_session", "Save"),
         Binding("ctrl+slash", "help", "Help"),
         Binding("f1", "help", "Help"),
     ]
@@ -52,7 +51,7 @@ class LitTuiApp(App):
             level=log_level,
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             handlers=[
-                logging.FileHandler(self.config_path / "lit-tui.log"),
+                logging.FileHandler(self.config_path / "lit-tui.log", mode='w'),  # 'w' mode overwrites on each run
                 logging.StreamHandler() if self.config.debug else logging.NullHandler(),
             ]
         )
@@ -62,16 +61,15 @@ class LitTuiApp(App):
         
     def compose(self) -> ComposeResult:
         """Compose the application layout."""
-        yield Header()
         # Main content will be handled by screens
         yield Footer()
         
     async def action_quit(self) -> None:
         """Handle quit action."""
         # Shutdown MCP services if available
-        if hasattr(self.screen, 'mcp_client'):
+        if hasattr(self.screen, 'mcp_client') and self.screen.mcp_client:
             await self.screen.mcp_client.shutdown()
-        await self.exit()
+        self.exit()
         
     async def action_new_chat(self) -> None:
         """Handle new chat action."""
@@ -82,11 +80,6 @@ class LitTuiApp(App):
         """Handle open session action."""
         if hasattr(self.screen, 'open_session'):
             await self.screen.open_session()
-            
-    async def action_save_session(self) -> None:
-        """Handle save session action."""
-        if hasattr(self.screen, 'save_session'):
-            await self.screen.save_session()
             
     async def action_help(self) -> None:
         """Show help screen."""

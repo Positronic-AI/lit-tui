@@ -150,6 +150,11 @@ class MCPClient:
         self.servers: Dict[str, MCPServerProcess] = {}
         self.tools: Dict[str, MCPTool] = {}
         self.request_id = 0
+    
+    def _get_next_request_id(self) -> int:
+        """Get the next request ID."""
+        self.request_id += 1
+        return self.request_id
         
     async def initialize(self) -> bool:
         """Initialize MCP client and start configured servers."""
@@ -279,6 +284,45 @@ class MCPClient:
     def get_available_tools(self) -> List[MCPTool]:
         """Get list of all available tools."""
         return list(self.tools.values())
+    
+    async def execute_tool(self, server_name: str, tool_name: str, arguments: Dict[str, Any]) -> Any:
+        """Execute a tool on the specified MCP server."""
+        server = self.servers.get(server_name)
+        if not server:
+            raise ValueError(f"MCP server {server_name} not found")
+        
+        if not server.is_running:
+            raise ValueError(f"MCP server {server_name} is not running")
+        
+        try:
+            # Create tool call request
+            request = {
+                "jsonrpc": "2.0",
+                "id": self._get_next_request_id(),
+                "method": "tools/call",
+                "params": {
+                    "name": tool_name,
+                    "arguments": arguments
+                }
+            }
+            
+            # Send request to server
+            response = await server.send_request(request)
+            
+            if "error" in response:
+                error = response["error"]
+                raise Exception(f"Tool execution error: {error.get('message', 'Unknown error')}")
+            
+            # Return the result
+            result = response.get("result", {})
+            if "content" in result:
+                return result["content"]
+            else:
+                return result
+                
+        except Exception as e:
+            logger.error(f"Error executing tool {tool_name} on server {server_name}: {e}")
+            raise
     
     def get_tools_by_server(self, server_name: str) -> List[MCPTool]:
         """Get tools from a specific server."""

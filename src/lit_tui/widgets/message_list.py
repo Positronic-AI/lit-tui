@@ -7,13 +7,13 @@ syntax highlighting, and scrolling capabilities.
 
 import logging
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.syntax import Syntax
 from rich.text import Text
-from textual.containers import Vertical
+from textual.containers import Vertical, VerticalScroll
 from textual.widget import Widget
 from textual.widgets import Static
 
@@ -42,70 +42,61 @@ class MessageWidget(Static):
         # Format timestamp
         time_str = self.timestamp.strftime("%H:%M:%S")
         
-        # Role styling
+        # Simple role display without emojis
         role_display = {
-            "user": "👤 You",
-            "assistant": "🤖 Assistant", 
-            "system": "⚙️ System"
+            "user": "You",
+            "assistant": "Assistant", 
+            "system": "System"
         }.get(self.role, self.role.title())
         
-        # Create header
-        header = f"[dim]{time_str}[/dim] [bold]{role_display}[/bold]"
+        # Simple header - just timestamp and role
+        header = f"{time_str} {role_display}"
         
-        # Process content for markdown/code blocks
-        processed_content = self._process_content(self.content)
-        
-        return f"{header}\n{processed_content}\n"
+        # Minimal content processing
+        return f"{header}\n{self.content}\n"
     
-    def _process_content(self, content: str) -> str:
-        """Process content for rich formatting."""
-        # For now, just return the content as-is
-        # TODO: Add markdown processing, code highlighting, etc.
-        return content
-
-
+    
 class MessageList(Widget):
-    """Widget for displaying a list of chat messages."""
+    """Widget for displaying a list of chat messages with scrolling."""
+    
+    # Enable scrolling and focusing
+    can_focus = True
     
     CSS = """
     MessageList {
         background: $background;
         color: $text;
-        scrollbar-background: $surface;
-        scrollbar-color: $primary;
+        overflow-y: scroll;
+        height: 1fr;
     }
     
     .message-user {
-        background: $accent 10%;
         margin: 1 0;
-        padding: 1;
-        border-left: thick $accent;
+        padding: 0;
     }
     
     .message-assistant {
-        background: $primary 10%;
         margin: 1 0;
-        padding: 1;
-        border-left: thick $primary;
+        padding: 0;
     }
     
     .message-system {
-        background: $warning 10%;
         margin: 1 0;
-        padding: 1;
-        border-left: thick $warning;
+        padding: 0;
     }
     """
     
-    def __init__(self, **kwargs):
+    def __init__(self, config=None, **kwargs):
         """Initialize message list."""
         super().__init__(**kwargs)
         self.messages: List[MessageWidget] = []
-        self.container: Optional[Vertical] = None
+        self.container: Optional[Union[Vertical, VerticalScroll]] = None
+        self.config = config
     
     def compose(self):
         """Compose the message list."""
-        self.container = Vertical()
+        # Use VerticalScroll for proper scrolling
+        self.container = VerticalScroll()
         yield self.container
     
     async def add_message(self, role: str, content: str, timestamp: Optional[datetime] = None) -> None:
@@ -119,8 +110,9 @@ class MessageList(Widget):
             if self.container:
                 await self.container.mount(message)
                 
-                # Auto-scroll to bottom
-                self.scroll_end(animate=True)
+                # Auto-scroll to bottom if enabled in config
+                if self.config and self.config.ui.auto_scroll:
+                    self.container.scroll_end(animate=True)
                 
         except Exception as e:
             logger.error(f"Error adding message: {e}")
@@ -148,3 +140,13 @@ class MessageList(Widget):
             last_message = self.messages[-1]
             last_message.content = content
             last_message.update(last_message._create_styled_content())
+    
+    async def add_chunk_to_last_message(self, chunk: str) -> None:
+        """Add a chunk to the last message (for streaming)."""
+        if self.messages:
+            last_message = self.messages[-1]
+            last_message.content += chunk
+            last_message.update(last_message._create_styled_content())
+            # Auto-scroll to keep the latest content visible (if enabled)
+            if self.config and self.config.ui.auto_scroll:
+                self.container.scroll_end(animate=False)

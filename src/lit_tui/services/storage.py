@@ -147,6 +147,7 @@ class StorageService:
         self.config = config
         self.storage_dir = storage_dir or Path.home() / ".lit-tui"
         self.sessions_dir = self.storage_dir / "sessions"
+        self.settings_file = self.storage_dir / "settings.json"
         self.current_session: Optional[ChatSession] = None
         
         # Ensure directories exist
@@ -327,3 +328,40 @@ class StorageService:
                 "storage_dir": str(self.storage_dir),
                 "error": str(e)
             }
+    
+    async def save_last_model(self, model: str) -> None:
+        """Save the last used model."""
+        try:
+            settings = await self.load_settings()
+            settings["last_model"] = model
+            
+            async with aiofiles.open(self.settings_file, 'w') as f:
+                await f.write(json.dumps(settings, indent=2))
+            
+            logger.debug(f"Saved last model: {model}")
+            
+        except Exception as e:
+            logger.error(f"Failed to save last model: {e}")
+    
+    async def load_last_model(self) -> Optional[str]:
+        """Load the last used model."""
+        try:
+            settings = await self.load_settings()
+            return settings.get("last_model")
+            
+        except Exception as e:
+            logger.error(f"Failed to load last model: {e}")
+            return None
+    
+    async def load_settings(self) -> Dict[str, Any]:
+        """Load user settings."""
+        try:
+            if self.settings_file.exists():
+                async with aiofiles.open(self.settings_file, 'r') as f:
+                    return json.loads(await f.read())
+            else:
+                return {}
+                
+        except Exception as e:
+            logger.error(f"Failed to load settings: {e}")
+            return {}

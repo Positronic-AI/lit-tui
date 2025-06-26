@@ -25,7 +25,6 @@ class OllamaConfig(BaseModel):
 class UIConfig(BaseModel):
     """User interface configuration."""
     theme: str = Field(default="dark", description="UI theme (dark/light/auto)")
-    font_size: str = Field(default="medium", description="Font size (small/medium/large)")
     show_token_count: bool = Field(default=True, description="Show token count in UI")
     auto_scroll: bool = Field(default=True, description="Auto-scroll to new messages")
     show_timestamps: bool = Field(default=True, description="Show message timestamps")
@@ -34,12 +33,6 @@ class UIConfig(BaseModel):
     def validate_theme(cls, v):
         if v not in ['dark', 'light', 'auto']:
             raise ValueError('theme must be one of: dark, light, auto')
-        return v
-        
-    @validator('font_size')
-    def validate_font_size(cls, v):
-        if v not in ['small', 'medium', 'large']:
-            raise ValueError('font_size must be one of: small, medium, large')
         return v
 
 

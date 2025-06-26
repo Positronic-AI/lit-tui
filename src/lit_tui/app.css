@@ -1,4 +1,11 @@
-/* LIT TUI CSS Styles */
+/* LIT TUI - Aggressively borderless terminal CSS */
+
+/* Global reset - remove all possible borders and separators */
+* {
+    border: none;
+    outline: none;
+    box-sizing: border-box;
+}
 
 /* Basic app styling */
 Screen {
@@ -6,111 +13,229 @@ Screen {
     color: $text;
 }
 
-/* Header and footer */
-Header {
-    background: $primary;
-    color: $text;
-    text-style: bold;
-}
-
+/* Footer minimal styling */
 Footer {
-    background: $primary;
+    background: $background;
     color: $text;
+    border: none;
 }
 
-/* General layout */
+/* Force all containers to be invisible */
+Horizontal {
+    background: $background;
+    border: none;
+    outline: none;
+    margin: 0;
+    padding: 0;
+    height: auto;
+    align: left middle;
+}
+
+Vertical {
+    background: $background;
+    border: none;
+    outline: none;
+    margin: 0;
+    padding: 0;
+}
+
+/* Layout areas - make completely seamless */
 .sidebar {
     width: 25%;
-    background: $surface;
-    border-right: thick $primary;
+    background: $background;
+    border: none;
+    border-right: none;
+    border-left: none;
+    margin: 0;
+    padding: 0;
 }
 
 .main-area {
     width: 75%;
+    background: $background;
+    border: none;
+    margin: 0;
+    padding: 0;
 }
 
-/* Chat area */
 .chat-area {
     height: 1fr;
     background: $background;
+    border: none;
+    border-top: none;
+    border-bottom: none;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
 }
 
 .input-area {
     height: auto;
-    background: $surface;
-    border-top: thick $primary;
+    background: $background;
+    border: none;
+    border-top: none;
+    border-bottom: none;
+    margin: 0;
     padding: 1;
 }
 
 .input-container {
     layout: horizontal;
     height: auto;
+    background: $background;
+    border: none;
+    margin: 0;
+    padding: 0;
 }
 
+/* Remove all visual elements from inputs and buttons */
 .chat-input {
     width: 1fr;
     margin-right: 1;
+    background: $background;
+    color: $text;
+    border: none;
+    outline: none;
 }
 
 .send-button {
     width: auto;
+    background: $background;
+    color: $text;
+    border: none;
+    outline: none;
 }
 
 .status-bar {
     height: 1;
-    background: $primary;
+    background: $background;
     color: $text;
-    text-align: center;
+    text-align: left;
+    border: none;
+    border-top: none;
+    border-bottom: none;
 }
 
-/* Sidebar styling */
+/* Sidebar - completely borderless */
 .sidebar-section {
     margin: 1 0;
-    border: round $primary;
-    padding: 1;
+    padding: 0;
+    background: $background;
+    border: none;
 }
 
 .sidebar-title {
-    text-style: bold;
-    color: $accent;
+    color: $text;
     margin-bottom: 1;
+    background: $background;
+    border: none;
 }
 
 .model-info {
-    background: $primary 20%;
-    padding: 1;
-    border: round $primary;
+    background: $background;
+    padding: 0;
     margin: 1 0;
+    border: none;
 }
 
 .session-list {
     height: 1fr;
-    border: round $primary;
+    background: $background;
+    border: none;
 }
 
 .sidebar-button {
     width: 100%;
     margin: 1 0;
+    background: $background;
+    color: $text;
+    border: none;
+    outline: none;
 }
 
-/* Message styling */
+/* Messages - no visual separation */
 .message-user {
-    background: $accent 10%;
     margin: 1 0;
-    padding: 1;
-    border-left: thick $accent;
+    padding: 0;
+    background: $background;
+    border: none;
+    border-left: none;
 }
 
 .message-assistant {
-    background: $primary 10%;
     margin: 1 0;
-    padding: 1;
-    border-left: thick $primary;
+    padding: 0;
+    background: $background;
+    border: none;
+    border-left: none;
 }
 
 .message-system {
-    background: $warning 10%;
     margin: 1 0;
-    padding: 1;
-    border-left: thick $warning;
+    padding: 0;
+    background: $background;
+    border: none;
+    border-left: none;
+}
+
+/* UI Elements - force no borders */
+Button {
+    background: $background;
+    color: $text;
+    border: none;
+    outline: none;
+}
+
+Button:hover {
+    background: $surface;
+    color: $text;
+    border: none;
+    outline: none;
+}
+
+Button:focus {
+    background: $surface;
+    color: $text;
+    border: none;
+    outline: none;
+}
+
+Input {
+    background: $background;
+    color: $text;
+    border: none;
+    outline: none;
+}
+
+Input:focus {
+    background: $background;
+    color: $text;
+    border: none;
+    outline: none;
+}
+
+OptionList {
+    background: $background;
+    color: $text;
+    border: none;
+}
+
+MessageList {
+    background: $background;
+    color: $text;
+    overflow-y: scroll;
+    height: 1fr;
+    border: none;
+}
+
+Static {
+    background: $background;
+    color: $text;
+    border: none;
+}
+
+Label {
+    background: $background;
+    color: $text;
+    border: none;
 }
