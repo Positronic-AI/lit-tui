@@ -295,25 +295,11 @@ class ChatScreen(Screen):
             # Add initial assistant message
             await message_list.add_message("assistant", "")
             
-            # For streaming, we'll use a different approach
-            # Store current accumulated response for periodic updates
-            self._streaming_response = ""
-            self._last_stream_update = ""
-            
-            def stream_callback(chunk: str):
+            # Create unified streaming callback that updates MessageList directly
+            async def unified_stream_callback(chunk: str) -> None:
+                """Unified streaming callback for both tool and non-tool conversations."""
                 if chunk:
-                    self._streaming_response += chunk
-                    
-            # Start a background task to update UI periodically
-            async def update_streaming():
-                while self.is_generating:
-                    if self._streaming_response != self._last_stream_update:
-                        await message_list.update_last_message(self._streaming_response)
-                        self._last_stream_update = self._streaming_response
-                    await asyncio.sleep(0.1)  # Update every 100ms
-            
-            # Start the periodic update task
-            update_task = asyncio.create_task(update_streaming())
+                    await message_list.add_chunk_to_last_message(chunk)
                     
             # Process with tools if available (lit-platform approach)
             if available_tools:
@@ -341,9 +327,6 @@ class ChatScreen(Screen):
                     
                     # Update the message directly
                     await message_list.update_last_message(error_message)
-                    
-                    # Stop the periodic update task
-                    update_task.cancel()
                     return
                 
                 logger.info(f"🔧 Processing with {len(available_tools)} tools available (system prompt approach)")
@@ -351,14 +334,11 @@ class ChatScreen(Screen):
                     model=self.current_model,
                     messages=messages,
                     tools=[],  # Don't pass tools to Ollama - they're in the system prompt
-                    stream_callback=stream_callback,
+                    stream_callback=unified_stream_callback,
                     system_prompt_info=system_prompt_info
                 )
-                # Final update with complete response
-                await message_list.update_last_message(response_content)
-                await message_list.update_last_message(response_content)
             else:
-                # No tools, use standard completion - this should already work
+                # No tools, use standard completion with the same streaming approach
                 logger.info("💬 Processing without tools")
                 response_content = ""
                 async for chunk in self.ollama_client.chat_completion(
@@ -368,10 +348,7 @@ class ChatScreen(Screen):
                 ):
                     response_content += chunk
                     if chunk:
-                        await message_list.add_chunk_to_last_message(chunk)
-            
-            # Stop the periodic update task
-            update_task.cancel()
+                        await unified_stream_callback(chunk)
             
             # Save complete response to session
             if self.current_session and response_content:
@@ -382,11 +359,6 @@ class ChatScreen(Screen):
                 )
                 self.current_session.add_message(assistant_msg)
                 await self.storage_service.save_session(self.current_session)
-            
-        except Exception as e:
-            logger.error(f"Error generating response: {e}")
-            message_list = self.query_one("#messages", MessageList)
-            await message_list.add_message("assistant", f"Error: {e}")
             
         except Exception as e:
             logger.error(f"Error generating response: {e}")

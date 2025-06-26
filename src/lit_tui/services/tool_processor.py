@@ -5,6 +5,7 @@ This module handles processing tool calls by parsing JSON from LLM text response
 and executing them through MCP, following the exact same pattern as lit-platform.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -140,7 +141,11 @@ class ToolCallProcessor:
                             
                             # Send result to stream
                             if stream_callback:
-                                stream_callback(result_msg)
+                                # Handle both sync and async callbacks
+                                if asyncio.iscoroutinefunction(stream_callback):
+                                    await stream_callback(result_msg)
+                                else:
+                                    stream_callback(result_msg)
                             
                             tool_executed_this_cycle = True
                             self.tool_call_count += 1
@@ -166,7 +171,12 @@ class ToolCallProcessor:
         except Exception as e:
             logger.error(f"Error in tool processing: {e}")
             if stream_callback:
-                stream_callback(f"\n❌ Tool processing error: {e}\n")
+                error_msg = f"\n❌ Tool processing error: {e}\n"
+                # Handle both sync and async callbacks
+                if asyncio.iscoroutinefunction(stream_callback):
+                    await stream_callback(error_msg)
+                else:
+                    stream_callback(error_msg)
             total_response += f"\n\nError: {e}"
             
         return total_response
@@ -180,16 +190,16 @@ class ToolCallProcessor:
         logger.debug(f"PROCESS TOKEN: '{token}' (state={self.state})")
         
         if self.state == StreamState.NORMAL_TOKENS:
-            return self._handle_normal_token(token, stream_callback)
+            return await self._handle_normal_token(token, stream_callback)
         elif self.state == StreamState.TOOL_CALL_DETECTED:
             return await self._handle_tool_collection_token(token, stream_callback)
         else:
             # Unknown state, treat as normal
             logger.warning(f"Unknown state {self.state}, treating as normal")
             self.state = StreamState.NORMAL_TOKENS
-            return self._handle_normal_token(token, stream_callback)
+            return await self._handle_normal_token(token, stream_callback)
     
-    def _handle_normal_token(self, token, stream_callback):
+    async def _handle_normal_token(self, token, stream_callback):
         """Handle tokens in normal streaming mode."""
         # Check if this might be the start of a tool call
         if "{" in token:
@@ -201,13 +211,21 @@ class ToolCallProcessor:
             
             # Send the brace to the stream for now
             if stream_callback:
-                stream_callback(token)
+                # Handle both sync and async callbacks
+                if asyncio.iscoroutinefunction(stream_callback):
+                    await stream_callback(token)
+                else:
+                    stream_callback(token)
             
             return {"action": "continue"}
         else:
             # Normal token, send to stream
             if stream_callback:
-                stream_callback(token)
+                # Handle both sync and async callbacks
+                if asyncio.iscoroutinefunction(stream_callback):
+                    await stream_callback(token)
+                else:
+                    stream_callback(token)
             
             return {"action": "continue"}
     
@@ -257,19 +275,31 @@ class ToolCallProcessor:
                     # Continue as normal text on error
                     self.state = StreamState.NORMAL_TOKENS
                     if stream_callback:
-                        stream_callback(self.tool_call_buffer)
+                        # Handle both sync and async callbacks
+                        if asyncio.iscoroutinefunction(stream_callback):
+                            await stream_callback(self.tool_call_buffer)
+                        else:
+                            stream_callback(self.tool_call_buffer)
                     return {"action": "continue"}
             else:
                 # Not a valid tool call, treat as normal text
                 logger.info("TOOL VALIDATION: Not a valid tool call, continuing as normal text")
                 self.state = StreamState.NORMAL_TOKENS
                 if stream_callback:
-                    stream_callback(self.tool_call_buffer)
+                    # Handle both sync and async callbacks
+                    if asyncio.iscoroutinefunction(stream_callback):
+                        await stream_callback(self.tool_call_buffer)
+                    else:
+                        stream_callback(self.tool_call_buffer)
                 return {"action": "continue"}
         else:
             # Still collecting, send token to stream
             if stream_callback:
-                stream_callback(token)
+                # Handle both sync and async callbacks
+                if asyncio.iscoroutinefunction(stream_callback):
+                    await stream_callback(token)
+                else:
+                    stream_callback(token)
             return {"action": "continue"}
     
     def _extract_tool_call(self, text: str) -> Optional[Dict[str, Any]]:
