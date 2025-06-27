@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from textual import on, work
-from textual.containers import Vertical, Horizontal
+from textual.containers import Vertical, Horizontal, VerticalScroll
 from textual.widget import Widget
 from textual.widgets import Button, Label, Static, OptionList
 from textual.widgets.option_list import Option
@@ -162,7 +162,7 @@ class Sidebar(Widget):
         max-height: 1;
     }
     
-    .inline-button:disabled {
+    .fake-disabled {
         opacity: 50%;
         text-style: dim;
     }
@@ -198,7 +198,17 @@ class Sidebar(Widget):
     
     .notification-item:hover {
         background: $surface;
+        text-style: underline;
+        border: round $primary 50%;
+    }
+    
+    .notification-hint {
         text-style: dim;
+        text-align: right;
+        height: 1;
+        width: auto;
+        margin: 0;
+        padding: 0;
     }
     """
     
@@ -227,7 +237,9 @@ class Sidebar(Widget):
             
         # Notifications area - compact at bottom, scrollable
         with Vertical(classes="sidebar-section notifications-section"):
-            with Vertical(id="notification_container", classes="notification-container"):
+            with Horizontal(classes="title-row"):
+                yield Label("Notifications", classes="sidebar-title")
+            with VerticalScroll(id="notification_container", classes="notification-container"):
                 pass  # Notifications will be added dynamically
     
     async def on_mount(self) -> None:
@@ -251,6 +263,12 @@ class Sidebar(Widget):
     async def on_delete_session(self, event: Button.Pressed) -> None:
         """Handle delete session button - deletes the current session."""
         try:
+            # Check if button is fake-disabled (for unsaved sessions)
+            delete_button = event.button
+            if delete_button.has_class("fake-disabled"):
+                self.show_notification("Cannot delete unsaved session", "warning")
+                return
+            
             # Check if we have a current session to delete
             if not hasattr(self.screen, 'current_session') or not self.screen.current_session:
                 self.show_notification("No current session to delete", "warning")
@@ -258,7 +276,7 @@ class Sidebar(Widget):
             
             current_session = self.screen.current_session
             
-            # Only allow deletion of saved sessions
+            # Only allow deletion of saved sessions (redundant check but keeping for safety)
             if not current_session.is_saved:
                 self.show_notification("Cannot delete unsaved session", "warning")
                 return
@@ -411,13 +429,13 @@ class Sidebar(Widget):
             delete_button = self.query_one("#delete_session", Button)
             
             if session_is_saved:
-                # Session is saved, enable delete button
+                # Session is saved, enable delete button (normal state)
                 delete_button.disabled = False
-                delete_button.tooltip = "Delete current session"
+                delete_button.remove_class("fake-disabled")
             else:
-                # Session not saved yet, disable delete button to prevent accidents
-                delete_button.disabled = True
-                delete_button.tooltip = "Delete disabled - current session not saved yet"
+                # Session not saved yet, fake disable the button
+                delete_button.disabled = False  # Keep enabled to avoid black background
+                delete_button.add_class("fake-disabled")
                 
         except Exception as e:
             logger.error(f"Error updating delete button state: {e}")
@@ -457,7 +475,7 @@ class Sidebar(Widget):
     def _add_notification_to_ui(self, notification: dict) -> None:
         """Add a single notification to the UI."""
         try:
-            container = self.query_one("#notification_container", Vertical)
+            container = self.query_one("#notification_container", VerticalScroll)
             
             # Create clickable notification
             notification_widget = Static(
@@ -471,13 +489,15 @@ class Sidebar(Widget):
             
             container.mount(notification_widget)
             
+            logger.debug(f"Mounted notification widget: {notification['id']}")
+            
         except Exception as e:
             logger.error(f"Error adding notification to UI: {e}")
     
     def _scroll_to_newest(self) -> None:
         """Auto-scroll to show the newest notification."""
         try:
-            container = self.query_one("#notification_container", Vertical)
+            container = self.query_one("#notification_container", VerticalScroll)
             # Scroll to bottom to show newest notification
             container.scroll_end(animate=False)
         except Exception as e:
@@ -487,6 +507,7 @@ class Sidebar(Widget):
         """Handle clicks on notification items."""
         # Check if the click was on a notification item
         if hasattr(event.widget, 'has_class') and event.widget.has_class("notification-item"):
+            logger.debug(f"Notification clicked: {event.widget.id}")
             self._dismiss_notification(event.widget)
     
     def _dismiss_notification(self, notification_widget: Static) -> None:

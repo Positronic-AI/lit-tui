@@ -393,23 +393,11 @@ class ChatScreen(Screen):
                 model=self.current_model
             )
             
-            # Clear messages
+            # Clear messages - start with clean empty chat
             message_list = self.query_one("#messages", MessageList)
             await message_list.clear()
             
-            # Add welcome message to UI only (not saved until user sends first message)
-            welcome_msg = "Hello! I'm your AI assistant. How can I help you today?"
-            await message_list.add_message("assistant", welcome_msg)
-            
-            # Add welcome message to session but DON'T save yet
-            if self.current_session:
-                assistant_msg = ChatMessage(
-                    role="assistant", 
-                    content=welcome_msg,
-                    model=self.current_model
-                )
-                self.current_session.add_message(assistant_msg)
-                # Note: Not calling save_session here - session will be saved on first user message
+            # No welcome message - clean start like lit-server and lit-desktop
             
             # Refresh the sidebar session list (will only show saved sessions)
             sidebar = self.query_one(Sidebar)

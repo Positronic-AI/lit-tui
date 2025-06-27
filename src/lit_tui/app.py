@@ -76,9 +76,38 @@ class LitTuiApp(App):
         self.exit()
     
     def action_quit_with_confirmation(self) -> None:
-        """Handle quit with confirmation (ESC)."""
-        # Use a worker to handle the async modal - call the method to get the coroutine
-        self.run_worker(self._quit_with_confirmation_worker(), exclusive=True)
+        """Handle quit with confirmation (ESC) - with smart session handling."""
+        # Use a worker to handle the async logic
+        self.run_worker(self._smart_escape_worker(), exclusive=True)
+    
+    async def _smart_escape_worker(self) -> None:
+        """Smart ESC behavior: unselect conversation first, then quit confirmation."""
+        import logging
+        
+        try:
+            # Check if we have a chat screen with a current session
+            if hasattr(self.screen, 'current_session') and self.screen.current_session:
+                current_session = self.screen.current_session
+                
+                # Check if the current session is saved (meaning it's a selected conversation)
+                if hasattr(current_session, 'is_saved') and current_session.is_saved:
+                    # User has a saved conversation selected - unselect it by starting new chat
+                    logging.info("ESC: Unselecting saved conversation and starting new chat")
+                    await self.screen.new_chat()
+                    return  # Don't show quit dialog, just unselect
+                else:
+                    # Current session is unsaved (new chat) - proceed with quit confirmation
+                    logging.info("ESC: Already in new unsaved session, showing quit confirmation")
+                    await self._quit_with_confirmation_worker()
+            else:
+                # No current session - proceed with quit confirmation
+                logging.info("ESC: No current session, showing quit confirmation")
+                await self._quit_with_confirmation_worker()
+                
+        except Exception as e:
+            # If something goes wrong, fall back to quit confirmation
+            logging.error(f"Error in smart escape handling: {e}")
+            await self._quit_with_confirmation_worker()
     
     async def _quit_with_confirmation_worker(self) -> None:
         """Worker to handle quit confirmation dialog."""

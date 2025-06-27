@@ -181,7 +181,7 @@ Button,OptionList {
 }
 
 MessageList {
-    overflow-y: scroll;
+    overflow-y: auto;
     height: 1fr;
     border: none;
 }
