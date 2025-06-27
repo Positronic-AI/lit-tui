@@ -5,7 +5,6 @@
     "default_model": "llama2"
   },
   "ui": {
-    "theme": "dark",
     "font_size": "medium",
     "show_token_count": true,
     "auto_scroll": true,

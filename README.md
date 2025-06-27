@@ -9,7 +9,7 @@ A lightweight, fast, and beautiful terminal chat interface for Ollama with MCP (
 - **🚀 Fast**: Starts in milliseconds, not seconds
 - **💡 Smart**: Optional integration with system-prompt-composer for enhanced prompts
 - **🔧 Extensible**: MCP integration for dynamic tool discovery and execution
-- **🎨 Beautiful**: Rich terminal interface with syntax highlighting and themes
+- **🎨 Beautiful**: Rich terminal interface with syntax highlighting and native terminal appearance
 - **⌨️ Keyboard-first**: Efficient navigation designed for developers
 - **📦 Lightweight**: No Electron overhead - pure Python performance
 - **🔄 Cross-platform**: Works on Linux, macOS, and Windows terminals
@@ -60,7 +60,6 @@ lit-tui stores its configuration in `~/.lit-tui/config.json`. On first run, it w
     "default_model": "llama2"
   },
   "ui": {
-    "theme": "dark",
     "font_size": "medium",
     "show_token_count": true
   },
@@ -112,9 +111,9 @@ lit-tui supports the Model Context Protocol for dynamic tool integration:
 | `Shift+Enter` | New line in message |
 | `Ctrl+/` | Show help |
 
-## 🎨 Themes
+## 🎨 Appearance
 
-lit-tui supports custom themes. See [examples/custom_themes/](examples/custom_themes/) for examples.
+lit-tui uses your terminal's default theme and colorscheme for a native look and feel. The interface features transparent backgrounds that blend seamlessly with your terminal environment, respecting your personal terminal configuration and color preferences.
 
 ## 🏗️ Architecture
 
