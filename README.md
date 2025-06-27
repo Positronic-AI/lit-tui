@@ -102,14 +102,12 @@ lit-tui supports the Model Context Protocol for dynamic tool integration:
 | Key | Action |
 |-----|--------|
 | `Ctrl+N` | New chat session |
-| `Ctrl+L` | Clear current chat |
-| `Ctrl+S` | Save session |
 | `Ctrl+O` | Open session |
 | `Ctrl+Q` | Quit |
-| `Tab` | Switch between panels |
+| `ESC` | Quit with confirmation |
 | `Enter` | Send message |
 | `Shift+Enter` | New line in message |
-| `Ctrl+/` | Show help |
+| `Ctrl+/` or `F1` | Show help |
 
 ## 🎨 Appearance
 
