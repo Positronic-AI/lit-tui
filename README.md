@@ -130,10 +130,19 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 ### Development Setup
 
 ```bash
-git clone https://github.com/lit-ai/lit-tui.git
+git clone https://github.com/Positronic-AI/lit-tui.git
 cd lit-tui
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 pre-commit install
+```
+
+### Quick Development
+
+```bash
+# Use the development script for easy setup
+./dev.sh
 ```
 
 ### Running Tests
