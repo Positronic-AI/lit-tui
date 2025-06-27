@@ -25,12 +25,9 @@ class SettingsScreen(ModalScreen):
     CSS = """
     SettingsScreen {
         align: center middle;
-        background: rgba(0, 0, 0, 0.8);
     }
     
     .settings-dialog {
-        background: $surface;
-        border: thick $primary;
         width: 60;
         height: 22;
         padding: 2;
@@ -90,4 +87,6 @@ class SettingsScreen(ModalScreen):
     def on_key(self, event) -> None:
         """Handle key presses."""
         if event.key == "escape":
+            event.prevent_default()  # Prevent ESC from bubbling up to main app
+            event.stop()
             self.app.pop_screen()

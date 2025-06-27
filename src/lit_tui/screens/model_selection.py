@@ -27,12 +27,9 @@ class ModelSelectionScreen(ModalScreen[str]):
     CSS = """
     ModelSelectionScreen {
         align: center middle;
-        background: rgba(0, 0, 0, 0.8);
     }
     
     .model-dialog {
-        background: $surface;
-        border: thick $primary;
         width: 70;
         height: 25;
         padding: 2;
@@ -160,7 +157,8 @@ class ModelSelectionScreen(ModalScreen[str]):
                 self.selected_model = str(option.id)
                 await self.select_model()
         else:
-            self.app.notify("No model selected", severity="warning")
+            # No model selected, return special value
+            self.dismiss("__no_selection__")
     
     @on(Button.Pressed, "#cancel")
     async def on_cancel_pressed(self, event: Button.Pressed) -> None:
@@ -174,16 +172,19 @@ class ModelSelectionScreen(ModalScreen[str]):
                 # Exit with the selected model
                 self.dismiss(self.selected_model)
             elif self.selected_model == self.current_model:
-                self.app.notify("Model is already selected")
-                self.dismiss()
+                # Return special value to indicate "already selected"
+                self.dismiss("__already_selected__")
             else:
-                self.app.notify("No model selected", severity="warning")
+                # Return special value to indicate "no selection"
+                self.dismiss("__no_selection__")
         except Exception as e:
             logger.error(f"Error in select_model: {e}")
-            self.app.notify(f"Error changing model: {e}", severity="error")
-            self.dismiss()
+            # Return error info
+            self.dismiss(f"__error__:{e}")
     
     def on_key(self, event) -> None:
         """Handle key presses."""
         if event.key == "escape":
+            event.prevent_default()  # Prevent ESC from bubbling up to main app
+            event.stop()
             self.dismiss()

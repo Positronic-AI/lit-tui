@@ -1,4 +1,4 @@
-/* LIT TUI - Aggressively borderless terminal CSS */
+/* LIT TUI - Minimal CSS that lets terminal colors show through */
 
 /* Global reset - remove all possible borders and separators */
 * {
@@ -7,22 +7,15 @@
     box-sizing: border-box;
 }
 
-/* Basic app styling */
+/* Don't specify colors at all - let Textual use terminal defaults */
 Screen {
-    background: $background;
-    color: $text;
 }
 
-/* Footer minimal styling */
 Footer {
-    background: $background;
-    color: $text;
     border: none;
 }
 
-/* Force all containers to be invisible */
 Horizontal {
-    background: $background;
     border: none;
     outline: none;
     margin: 0;
@@ -32,27 +25,21 @@ Horizontal {
 }
 
 Vertical {
-    background: $background;
     border: none;
     outline: none;
     margin: 0;
     padding: 0;
 }
 
-/* Layout areas - make completely seamless */
 .sidebar {
     width: 25%;
-    background: $background;
     border: none;
-    border-right: none;
-    border-left: none;
     margin: 0;
     padding: 0;
 }
 
 .main-area {
     width: 75%;
-    background: $background;
     border: none;
     margin: 0;
     padding: 0;
@@ -60,10 +47,7 @@ Vertical {
 
 .chat-area {
     height: 1fr;
-    background: $background;
     border: none;
-    border-top: none;
-    border-bottom: none;
     margin: 0;
     padding: 0;
     overflow: hidden;
@@ -71,10 +55,7 @@ Vertical {
 
 .input-area {
     height: auto;
-    background: $background;
     border: none;
-    border-top: none;
-    border-bottom: none;
     margin: 0;
     padding: 1;
 }
@@ -82,57 +63,42 @@ Vertical {
 .input-container {
     layout: horizontal;
     height: auto;
-    background: $background;
     border: none;
     margin: 0;
     padding: 0;
 }
 
-/* Remove all visual elements from inputs and buttons */
 .chat-input {
     width: 1fr;
     margin-right: 1;
-    background: $background;
-    color: $text;
     border: none;
     outline: none;
 }
 
 .send-button {
     width: auto;
-    background: $background;
-    color: $text;
     border: none;
     outline: none;
 }
 
 .status-bar {
     height: 1;
-    background: $background;
-    color: $text;
     text-align: left;
     border: none;
-    border-top: none;
-    border-bottom: none;
 }
 
-/* Sidebar - completely borderless */
 .sidebar-section {
     margin: 1 0;
     padding: 0;
-    background: $background;
     border: none;
 }
 
 .sidebar-title {
-    color: $text;
     margin-bottom: 1;
-    background: $background;
     border: none;
 }
 
 .model-info {
-    background: $background;
     padding: 0;
     margin: 1 0;
     border: none;
@@ -140,102 +106,90 @@ Vertical {
 
 .session-list {
     height: 1fr;
-    background: $background;
     border: none;
 }
 
 .sidebar-button {
     width: 100%;
     margin: 1 0;
-    background: $background;
-    color: $text;
     border: none;
     outline: none;
 }
 
-/* Messages - no visual separation */
 .message-user {
     margin: 1 0;
     padding: 0;
-    background: $background;
     border: none;
-    border-left: none;
 }
 
 .message-assistant {
     margin: 1 0;
     padding: 0;
-    background: $background;
     border: none;
-    border-left: none;
 }
 
 .message-system {
     margin: 1 0;
     padding: 0;
-    background: $background;
     border: none;
-    border-left: none;
 }
 
-/* UI Elements - force no borders */
 Button {
-    background: $background;
-    color: $text;
     border: none;
     outline: none;
 }
 
 Button:hover {
-    background: $surface;
-    color: $text;
     border: none;
     outline: none;
 }
 
 Button:focus {
-    background: $surface;
-    color: $text;
     border: none;
     outline: none;
 }
 
 Input {
-    background: $background;
-    color: $text;
     border: none;
     outline: none;
 }
 
 Input:focus {
-    background: $background;
-    color: $text;
     border: none;
     outline: none;
 }
 
-OptionList {
-    background: $background;
-    color: $text;
+Button,OptionList {
     border: none;
+    background: transparent;
+}
+
+/* Aggressively override all OptionList internal classes */
+.option-list--option {
+}
+
+.option-list--option-hover {
+    text-style: underline;
+}
+
+.option-list--option-highlighted {
+    text-style: bold;
+}
+
+.option-list--option-selected {
+    text-style: bold underline;
 }
 
 MessageList {
-    background: $background;
-    color: $text;
     overflow-y: scroll;
     height: 1fr;
     border: none;
 }
 
 Static {
-    background: $background;
-    color: $text;
     border: none;
 }
 
 Label {
-    background: $background;
-    color: $text;
     border: none;
 }

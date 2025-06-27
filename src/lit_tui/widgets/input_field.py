@@ -25,15 +25,10 @@ class ChatInputField(Widget):
         height: auto;
         min-height: 3;
         max-height: 10;
-        border: round $primary;
-        background: $surface;
     }
     
     .chat-textarea {
         border: none;
-        background: transparent;
-        scrollbar-background: $surface;
-        scrollbar-color: $primary;
     }
     """
     

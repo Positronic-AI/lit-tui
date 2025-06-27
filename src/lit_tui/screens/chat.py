@@ -31,12 +31,16 @@ class ChatScreen(Screen):
     
     CSS = """
     ChatScreen {
+        layout: vertical;
+    }
+    
+    .main-content {
         layout: horizontal;
+        height: 1fr;
     }
     
     .sidebar {
         width: 25%;
-        background: $background;
     }
     
     .main-area {
@@ -46,34 +50,21 @@ class ChatScreen(Screen):
     
     .chat-area {
         height: 1fr;
-        background: $background;
     }
     
     .input-area {
         height: auto;
-        background: $background;
         padding: 1;
-    }
-    
-    .input-container {
-        layout: horizontal;
-        height: auto;
     }
     
     .chat-input {
         width: 1fr;
-        margin-right: 1;
-    }
-    
-    .send-button {
-        width: auto;
     }
     
     .status-bar {
         height: 1;
-        background: $primary;
-        color: $text;
-        text-align: center;
+        text-align: left;
+        dock: bottom;
     }
     """
     
@@ -92,7 +83,8 @@ class ChatScreen(Screen):
         
     def compose(self) -> ComposeResult:
         """Compose the chat screen layout."""
-        with Horizontal():
+        # Main content area with sidebar and chat
+        with Horizontal(classes="main-content"):
             # Sidebar for session management
             with Vertical(classes="sidebar"):
                 yield Sidebar(self.config)
@@ -105,14 +97,14 @@ class ChatScreen(Screen):
                     
                 # Input area
                 with Vertical(classes="input-area"):
-                    yield Static("Initializing...", id="status", classes="status-bar")
-                    with Horizontal(classes="input-container"):
-                        yield Input(
-                            placeholder="Type your message here... (Enter to send)",
-                            id="chat_input",
-                            classes="chat-input"
-                        )
-                        yield Button("Send", id="send_button", classes="send-button")
+                    yield Input(
+                        placeholder="Type your message here... (Enter to send)",
+                        id="chat_input",
+                        classes="chat-input"
+                    )
+                    
+        # Status bar at the very bottom of the window
+        yield Static("", id="status", classes="status-bar")
     
     async def on_mount(self) -> None:
         """Called when screen is mounted."""
@@ -133,13 +125,15 @@ class ChatScreen(Screen):
             # Initialize Ollama
             is_available = await self.ollama_client.is_available()
             if not is_available:
-                self.update_status("⚠️  Ollama not available - check if server is running")
+                self.update_status("")
+                self.notify_via_sidebar("Ollama not available - check if server is running", "warning")
                 return
             
             # Load available models and restore last model
             models = await self.ollama_client.get_models()
             if not models:
-                self.update_status("⚠️  No models found - please pull a model in Ollama")
+                self.update_status("")
+                self.notify_via_sidebar("No models found - please pull a model in Ollama", "warning")
                 return
             
             # Try to restore last used model
@@ -166,17 +160,16 @@ class ChatScreen(Screen):
             if mcp_success:
                 tools = self.mcp_client.get_available_tools()
                 tool_count = len(tools)
-                self.update_status(f"✅ Connected - {self.current_model} + {tool_count} MCP tools")
-                if tool_count > 0:
-                    self.update_status(f"✅ Ready with {tool_count} MCP tools available")
+                self.update_status("")
+                self.notify_via_sidebar(f"Connected with {tool_count} MCP tools", "success")
             else:
-                self.update_status(f"✅ Connected to Ollama - using {self.current_model}")
-                # MCP tools unavailable - already shown in model status
+                self.update_status("")
+                self.notify_via_sidebar(f"Connected to Ollama - using {self.current_model}", "success")
             
         except Exception as e:
             logger.error(f"Failed to initialize services: {e}")
-            self.update_status(f"❌ Initialization error: {e}")
-            self.notify(f"Service initialization failed: {e}", severity="error")
+            self.update_status("")
+            self.notify_via_sidebar(f"Service initialization failed: {e}", "error")
     
     @on(Input.Submitted, "#chat_input")
     async def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -184,15 +177,6 @@ class ChatScreen(Screen):
         if not self.is_generating and event.value.strip():
             self.send_message(event.value.strip())
             event.input.value = ""
-            
-    @on(Button.Pressed, "#send_button")
-    async def on_send_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle send button press."""
-        chat_input = self.query_one("#chat_input", Input)
-        if not self.is_generating and chat_input.value.strip():
-            self.send_message(chat_input.value.strip())
-            chat_input.value = ""
-            chat_input.focus()
     
     @work(exclusive=True)
     async def send_message(self, message: str) -> None:
@@ -208,11 +192,23 @@ class ChatScreen(Screen):
             message_list = self.query_one("#messages", MessageList)
             await message_list.add_message("user", message)
             
-            # Add to session
+            # Add to session and save (this implements the elegant pattern)
             if self.current_session:
+                # Check if this will be the first save
+                is_first_save = not self.current_session.is_saved
+                
                 user_msg = ChatMessage(role="user", content=message, model=self.current_model)
                 self.current_session.add_message(user_msg)
+                
+                # Save session to disk (first user message triggers first save)
                 await self.storage_service.save_session(self.current_session)
+                
+                # If this was the first save, refresh sidebar to show the new session
+                if is_first_save:
+                    sidebar = self.query_one(Sidebar)
+                    await sidebar.load_sessions()
+                    # Enable delete button since session is now saved
+                    sidebar.update_delete_button_state(session_is_saved=True)
             
             # Start generating response
             self.update_status("🤖 Generating response...")
@@ -220,10 +216,10 @@ class ChatScreen(Screen):
             
         except Exception as e:
             logger.error(f"Error sending message: {e}")
-            self.notify(f"Error: {e}", severity="error")
+            self.notify_via_sidebar(f"Error: {e}", "error")
         finally:
             self.is_generating = False
-            self.update_status("Ready")
+            self.update_status("")
     
     @work(exclusive=True)
     async def generate_response(self, message: str) -> None:
@@ -378,11 +374,21 @@ class ChatScreen(Screen):
         """Update status bar."""
         status = self.query_one("#status", Static)
         status.update(message)
+        
+    def notify_via_sidebar(self, message: str, severity: str = "info") -> None:
+        """Send notification through sidebar instead of built-in notify."""
+        try:
+            sidebar = self.query_one(Sidebar)
+            sidebar.show_notification(message, severity)
+        except Exception as e:
+            logger.error(f"Error sending notification via sidebar: {e}")
+            # Fallback to built-in notification
+            self.notify(message, severity=severity)
     
     async def new_chat(self) -> None:
         """Start a new chat session."""
         try:
-            # Create new session
+            # Create new session (not saved to disk yet)
             self.current_session = await self.storage_service.create_session(
                 model=self.current_model
             )
@@ -391,11 +397,11 @@ class ChatScreen(Screen):
             message_list = self.query_one("#messages", MessageList)
             await message_list.clear()
             
-            # Add welcome message
+            # Add welcome message to UI only (not saved until user sends first message)
             welcome_msg = "Hello! I'm your AI assistant. How can I help you today?"
             await message_list.add_message("assistant", welcome_msg)
             
-            # Add welcome message to session
+            # Add welcome message to session but DON'T save yet
             if self.current_session:
                 assistant_msg = ChatMessage(
                     role="assistant", 
@@ -403,25 +409,27 @@ class ChatScreen(Screen):
                     model=self.current_model
                 )
                 self.current_session.add_message(assistant_msg)
-                await self.storage_service.save_session(self.current_session)
+                # Note: Not calling save_session here - session will be saved on first user message
             
-            # Refresh the sidebar session list
+            # Refresh the sidebar session list (will only show saved sessions)
             sidebar = self.query_one(Sidebar)
             await sidebar.load_sessions()
             
-            self.update_status(f"New session: {self.current_session.session_id[:8]}...")
-            self.notify("Started new chat session")
+            # Update delete button state - disable since this session is not saved yet
+            sidebar.update_delete_button_state(session_is_saved=False)
+            
+            self.notify_via_sidebar("Started new chat session", "success")
             
         except Exception as e:
             logger.error(f"Error creating new session: {e}")
-            self.notify(f"Error creating session: {e}", severity="error")
+            self.notify_via_sidebar(f"Error creating session: {e}", "error")
     
     async def load_session(self, session_id: str) -> None:
         """Load a specific session by ID."""
         try:
             session = await self.storage_service.load_session(session_id)
             if not session:
-                self.notify(f"Session not found: {session_id}", severity="error")
+                self.notify_via_sidebar(f"Session not found: {session_id}", "error")
                 return
             
             self.current_session = session
@@ -438,16 +446,18 @@ class ChatScreen(Screen):
             if session.model and session.model != self.current_model:
                 await self.change_model(session.model)
             
-            self.update_status(f"Loaded session: {session.title}")
+            # Enable delete button since loaded sessions are always saved
+            sidebar = self.query_one(Sidebar)
+            sidebar.update_delete_button_state(session_is_saved=True)
             
         except Exception as e:
             logger.error(f"Error loading session {session_id}: {e}")
-            self.notify(f"Error loading session: {e}", severity="error")
+            self.notify_via_sidebar(f"Error loading session: {e}", "error")
     
     async def open_session(self) -> None:
         """Open existing session."""
         # TODO: Implement session selection dialog
-        self.notify("Session selection coming soon!")
+        self.notify_via_sidebar("Session selection coming soon!", "info")
     
     async def change_model(self, model_name: str) -> None:
         """Change the current model."""
@@ -455,7 +465,7 @@ class ChatScreen(Screen):
             # Verify model is available
             models = await self.ollama_client.get_models()
             if not any(m.name == model_name for m in models):
-                self.notify(f"Model {model_name} not found", severity="error")
+                self.notify_via_sidebar(f"Model {model_name} not found", "error")
                 return
             
             self.current_model = model_name
@@ -463,8 +473,7 @@ class ChatScreen(Screen):
             # Save as last used model
             await self.storage_service.save_last_model(model_name)
             
-            self.update_status(f"✅ Using model: {model_name}")
-            self.notify(f"Switched to model: {model_name}")
+            self.notify_via_sidebar(f"Switched to model: {model_name}", "success")
             
             # Update sidebar model display
             try:
@@ -480,7 +489,7 @@ class ChatScreen(Screen):
                 
         except Exception as e:
             logger.error(f"Error changing model: {e}")
-            self.notify(f"Error changing model: {e}", severity="error")
+            self.notify_via_sidebar(f"Error changing model: {e}", "error")
     
     async def get_mcp_status(self) -> str:
         """Get MCP status for display."""

@@ -24,16 +24,9 @@ class OllamaConfig(BaseModel):
 
 class UIConfig(BaseModel):
     """User interface configuration."""
-    theme: str = Field(default="dark", description="UI theme (dark/light/auto)")
     show_token_count: bool = Field(default=True, description="Show token count in UI")
     auto_scroll: bool = Field(default=True, description="Auto-scroll to new messages")
     show_timestamps: bool = Field(default=True, description="Show message timestamps")
-    
-    @validator('theme')
-    def validate_theme(cls, v):
-        if v not in ['dark', 'light', 'auto']:
-            raise ValueError('theme must be one of: dark, light, auto')
-        return v
 
 
 class StorageConfig(BaseModel):

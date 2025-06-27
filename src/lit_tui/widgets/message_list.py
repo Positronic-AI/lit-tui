@@ -64,8 +64,6 @@ class MessageList(Widget):
     
     CSS = """
     MessageList {
-        background: $background;
-        color: $text;
         overflow-y: scroll;
         height: 1fr;
     }

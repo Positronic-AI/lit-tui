@@ -13,6 +13,7 @@ from typing import Optional
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual import work
 from textual.widgets import Footer
 
 from .config import Config, load_config
@@ -27,7 +28,8 @@ class LitTuiApp(App):
     SUB_TITLE = "Lightweight Terminal Chat Interface"
     
     BINDINGS = [
-        Binding("ctrl+q", "quit", "Quit"),
+        Binding("escape", "quit_with_confirmation", "Quit"),
+        Binding("ctrl+q", "quit", "Force Quit", show=False),  # Hidden from footer
         Binding("ctrl+n", "new_chat", "New Chat"),
         Binding("ctrl+o", "open_session", "Open"),
         Binding("ctrl+slash", "help", "Help"),
@@ -36,6 +38,8 @@ class LitTuiApp(App):
     
     def __init__(self, config_path: Optional[Path] = None, **kwargs):
         """Initialize the application."""
+        # Enable ANSI colors to respect terminal color scheme
+        kwargs['ansi_color'] = True
         super().__init__(**kwargs)
         self.config_path = config_path or Path.home() / ".lit-tui"
         self.config: Optional[Config] = None
@@ -65,11 +69,43 @@ class LitTuiApp(App):
         yield Footer()
         
     async def action_quit(self) -> None:
-        """Handle quit action."""
+        """Handle force quit action (CTRL-Q)."""
         # Shutdown MCP services if available
         if hasattr(self.screen, 'mcp_client') and self.screen.mcp_client:
             await self.screen.mcp_client.shutdown()
         self.exit()
+    
+    def action_quit_with_confirmation(self) -> None:
+        """Handle quit with confirmation (ESC)."""
+        # Use a worker to handle the async modal - call the method to get the coroutine
+        self.run_worker(self._quit_with_confirmation_worker(), exclusive=True)
+    
+    async def _quit_with_confirmation_worker(self) -> None:
+        """Worker to handle quit confirmation dialog."""
+        from .screens.confirmation import ConfirmationScreen
+        
+        try:
+            # Show confirmation dialog
+            confirmation = ConfirmationScreen("Really quit LIT TUI?")
+            result = await self.push_screen_wait(confirmation)
+            
+            # Debug: Log what we got back
+            import logging
+            logging.info(f"Confirmation dialog result: {result} (type: {type(result)})")
+            
+            if result is True:
+                # User confirmed, proceed with quit
+                logging.info("User confirmed quit, proceeding...")
+                await self.action_quit()
+            else:
+                logging.info("User cancelled quit, staying in app")
+                # Small delay to prevent ESC key from being processed again immediately
+                import asyncio
+                await asyncio.sleep(0.1)
+        except Exception as e:
+            # If something goes wrong, just log it and don't quit
+            import logging
+            logging.error(f"Error in quit confirmation: {e}")
         
     async def action_new_chat(self) -> None:
         """Handle new chat action."""
@@ -84,7 +120,16 @@ class LitTuiApp(App):
     async def action_help(self) -> None:
         """Show help screen."""
         # TODO: Implement help screen
-        self.notify("Help screen coming soon!")
+        # For now, try to send to sidebar if available
+        try:
+            if hasattr(self.screen, 'notify_via_sidebar'):
+                self.screen.notify_via_sidebar("Help screen coming soon!", "info")
+            else:
+                # Fallback for screens without sidebar
+                pass
+        except Exception:
+            # Silently ignore if notification fails
+            pass
 
 
 def setup_argument_parser() -> argparse.ArgumentParser:

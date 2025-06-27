@@ -72,7 +72,8 @@ class ChatSession:
         updated: Optional[datetime] = None,
         model: Optional[str] = None,
         messages: Optional[List[ChatMessage]] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        is_saved: bool = False
     ):
         self.session_id = session_id or str(uuid4())
         self.title = title or f"Chat {datetime.now().strftime('%Y-%m-%d %H:%M')}"
@@ -81,6 +82,7 @@ class ChatSession:
         self.model = model
         self.messages = messages or []
         self.metadata = metadata or {}
+        self.is_saved = is_saved
     
     def add_message(self, message: ChatMessage) -> None:
         """Add a message to the session."""
@@ -135,7 +137,8 @@ class ChatSession:
             updated=updated,
             model=data.get("model"),
             messages=messages,
-            metadata=data.get("metadata", {})
+            metadata=data.get("metadata", {}),
+            is_saved=True  # Loaded sessions are by definition already saved
         )
 
 
@@ -159,12 +162,11 @@ class StorageService:
         model: Optional[str] = None,
         title: Optional[str] = None
     ) -> ChatSession:
-        """Create a new chat session."""
-        session = ChatSession(model=model, title=title)
+        """Create a new chat session (not saved to disk until first message)."""
+        session = ChatSession(model=model, title=title, is_saved=False)
         self.current_session = session
-        await self.save_session(session)
         
-        logger.info(f"Created new session: {session.session_id}")
+        logger.info(f"Created new unsaved session: {session.session_id}")
         return session
     
     async def save_session(self, session: ChatSession) -> None:
@@ -176,7 +178,13 @@ class StorageService:
             async with aiofiles.open(session_file, 'w') as f:
                 await f.write(json.dumps(session_data, indent=2))
             
-            logger.debug(f"Saved session {session.session_id}")
+            # Mark session as saved
+            session.is_saved = True
+            
+            if session_data.get("messages"):
+                logger.debug(f"Saved session {session.session_id} with {len(session_data['messages'])} messages")
+            else:
+                logger.debug(f"Saved empty session {session.session_id}")
             
         except Exception as e:
             logger.error(f"Failed to save session {session.session_id}: {e}")
