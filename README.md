@@ -19,13 +19,15 @@ A lightweight, fast, and beautiful terminal chat interface for Ollama with MCP (
 ### Installation
 
 ```bash
-# Install from PyPI (when published)
+# Install from PyPI
 pip install lit-tui
 
 # Or install from source
-git clone https://github.com/lit-ai/lit-tui.git
+git clone https://github.com/Positronic-AI/lit-tui.git
 cd lit-tui
-pip install -e .
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
 ```
 
 ### Prerequisites

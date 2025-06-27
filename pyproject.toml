@@ -54,10 +54,10 @@ enhanced = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/lit-ai/lit-tui"
-Documentation = "https://github.com/lit-ai/lit-tui/blob/main/README.md"
-Repository = "https://github.com/lit-ai/lit-tui"
-Issues = "https://github.com/lit-ai/lit-tui/issues"
+Homepage = "https://github.com/Positronic-AI/lit-tui"
+Documentation = "https://github.com/Positronic-AI/lit-tui/blob/main/README.md"
+Repository = "https://github.com/Positronic-AI/lit-tui"
+Issues = "https://github.com/Positronic-AI/lit-tui/issues"
 
 [project.scripts]
 lit-tui = "lit_tui.app:main"
