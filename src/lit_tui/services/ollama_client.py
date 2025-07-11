@@ -166,6 +166,7 @@ class OllamaClient:
     ) -> AsyncIterator[str]:
         """Stream chat completion."""
         try:
+            logger.info(f"🔍 Ollama call - model: {model}, kwargs: {kwargs}")
             async for chunk in await self.client.chat(
                 model=model,
                 messages=messages,

@@ -59,6 +59,7 @@ class Config(BaseModel):
     storage: StorageConfig = Field(default_factory=StorageConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     debug: bool = Field(default=False, description="Enable debug logging")
+    system_prompt_content: Optional[str] = Field(default=None, description="Custom system prompt content")
     
     class Config:
         extra = "allow"  # Allow additional fields for extensibility
@@ -109,6 +110,20 @@ async def load_config(config_dir: Path) -> Config:
         logger.info("No config file found, creating default configuration")
         config = get_default_config()
         await save_config(config, config_dir)
+    
+    # Load custom system prompt if it exists
+    system_prompt_file = config_dir / "system-prompt.txt"
+    if system_prompt_file.exists():
+        try:
+            with open(system_prompt_file, 'r', encoding='utf-8') as f:
+                config.system_prompt_content = f.read().strip()
+            logger.info(f"Loaded custom system prompt from {system_prompt_file}")
+        except Exception as e:
+            logger.warning(f"Failed to load system prompt from {system_prompt_file}: {e}")
+            config.system_prompt_content = None
+    else:
+        logger.info("No custom system prompt found")
+        config.system_prompt_content = None
     
     return config
 

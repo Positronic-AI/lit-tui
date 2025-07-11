@@ -8,6 +8,7 @@ and executing them through MCP, following the exact same pattern as lit-platform
 import asyncio
 import json
 import logging
+import tiktoken
 import re
 from typing import Dict, List, Any, Optional, Callable
 from enum import Enum
@@ -16,6 +17,30 @@ from .conversation_logger import log_conversation, create_tool_execution_record
 from .model_compatibility import record_tool_result
 
 logger = logging.getLogger(__name__)
+
+
+def count_tokens_tiktoken(messages):
+    """Use tiktoken for accurate token counting"""
+    encoding = tiktoken.get_encoding("cl100k_base")  # GPT-4 encoding
+    total_tokens = 0
+    
+    logger.info(f"🧮 Counting tokens for {len(messages)} messages:")
+    for i, msg in enumerate(messages):
+        content = msg.get('content', '')
+        content_tokens = len(encoding.encode(content))
+        role_tokens = 4  # Role overhead per message
+        msg_total = content_tokens + role_tokens
+        total_tokens += msg_total
+        
+        logger.info(f"   Message {i} ({msg.get('role', 'unknown')}): {content_tokens} content + {role_tokens} role = {msg_total} tokens")
+    
+    logger.info(f"🧮 Total tokens: {total_tokens}")
+    
+    # Add small buffer for generation (10-20% overhead is typical)
+    final_context = int(total_tokens * 1.2)  # 20% buffer for response generation
+    
+    logger.info(f"🧮 Final context window: {final_context} (base: {total_tokens} + 20% buffer)")
+    return final_context
 
 
 class StreamState(Enum):
@@ -91,20 +116,31 @@ class ToolCallProcessor:
                 self._reset_state()
                 tool_executed_this_cycle = False
                 
+                # Calculate dynamic context window size
+                token_count = count_tokens_tiktoken(current_messages)
+                logger.info(f"🔢 Token count for {len(current_messages)} messages: {token_count}")
+                logger.info(f"📋 Message breakdown:")
+                for i, msg in enumerate(current_messages):
+                    content_preview = msg.get('content', '')[:100] + '...' if len(msg.get('content', '')) > 100 else msg.get('content', '')
+                    logger.info(f"   [{i}] {msg.get('role', 'unknown')}: {len(msg.get('content', ''))} chars - {content_preview}")
+                
                 # Log the request
                 request_data = {
                     "model": model,
                     "messages": current_messages,
-                    "options": {"temperature": 0.0},
+                    "options": {"temperature": 0.0, "num_ctx": token_count},
                     "tools": len(self.mcp_client.get_available_tools()) if self.mcp_client else 0
                 }
+                
+                logger.info(f"🚀 Calling Ollama with num_ctx={token_count}")
                 
                 # Stream from the model (no tools parameter)
                 full_response = ""
                 async for chunk in self.ollama_client.chat_completion(
                     model=model,
                     messages=current_messages,
-                    stream=True
+                    stream=True,
+                    options={"temperature": 0.0, "num_ctx": token_count}
                 ):
                     if chunk:  # Only process non-empty chunks
                         full_response += chunk

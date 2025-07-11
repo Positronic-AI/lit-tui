@@ -7,6 +7,7 @@ input handling, and session management.
 
 import asyncio
 import logging
+import tiktoken
 from typing import Optional
 
 from textual import on, work
@@ -24,6 +25,20 @@ from ..widgets import MessageList, Sidebar
 
 
 logger = logging.getLogger(__name__)
+
+
+def count_tokens_tiktoken(messages):
+    """Use tiktoken for accurate token counting"""
+    encoding = tiktoken.get_encoding("cl100k_base")  # GPT-4 encoding
+    total_tokens = 0
+    
+    for msg in messages:
+        content = msg.get('content', '')
+        total_tokens += len(encoding.encode(content))
+        total_tokens += 4  # Role overhead per message
+    
+    # Add small buffer for generation (10-20% overhead is typical)
+    return int(total_tokens * 1.2)  # 20% buffer for response generation
 
 
 class ChatScreen(Screen):
@@ -336,11 +351,18 @@ class ChatScreen(Screen):
             else:
                 # No tools, use standard completion with the same streaming approach
                 logger.info("💬 Processing without tools")
+                
+                # Calculate dynamic context window size
+                token_count = count_tokens_tiktoken(messages)
+                logger.info(f"🔢 [CHAT] Token count for {len(messages)} messages: {token_count}")
+                logger.info(f"🚀 [CHAT] Calling Ollama with num_ctx={token_count}")
+                
                 response_content = ""
                 async for chunk in self.ollama_client.chat_completion(
                     model=self.current_model,
                     messages=messages,
-                    stream=True
+                    stream=True,
+                    options={"num_ctx": token_count}
                 ):
                     response_content += chunk
                     if chunk:
