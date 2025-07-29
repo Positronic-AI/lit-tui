@@ -65,24 +65,28 @@ class MCPServerProcess:
         """Stop the MCP server process."""
         if self.process and self.is_running:
             try:
+                # Try graceful termination first
                 self.process.terminate()
                 
                 # Wait for graceful shutdown
                 try:
                     await asyncio.wait_for(
                         asyncio.create_task(self._wait_for_process()),
-                        timeout=5.0
+                        timeout=2.0  # Reduced from 5.0 seconds
                     )
                 except asyncio.TimeoutError:
                     # Force kill if it doesn't shut down gracefully
+                    logger.warning(f"MCP server {self.config.name} didn't terminate gracefully, force killing")
                     self.process.kill()
-                    await self._wait_for_process()
+                    # Don't wait after kill - just mark as stopped
                 
                 self.is_running = False
                 logger.info(f"Stopped MCP server: {self.config.name}")
                 
             except Exception as e:
                 logger.error(f"Error stopping MCP server {self.config.name}: {e}")
+                # Force mark as stopped even if there was an error
+                self.is_running = False
     
     async def _wait_for_process(self) -> None:
         """Wait for process to terminate."""
@@ -101,14 +105,13 @@ class MCPServerProcess:
             self.process.stdin.write(request_json)
             self.process.stdin.flush()
             
-            # Read response (with timeout)
-            response_line = await asyncio.wait_for(
-                self._read_line(),
+            # Read response, filtering notifications
+            response = await asyncio.wait_for(
+                self._read_response(request.get("id")),
                 timeout=self.config.timeout
             )
             
-            if response_line:
-                return json.loads(response_line.strip())
+            return response
             
         except asyncio.TimeoutError:
             logger.warning(f"MCP server {self.config.name} request timeout")
@@ -117,18 +120,48 @@ class MCPServerProcess:
         
         return None
     
-    async def _read_line(self) -> Optional[str]:
-        """Read a line from the process stdout."""
+    async def _read_response(self, request_id: Optional[int]) -> Optional[Dict[str, Any]]:
+        """Read response from MCP server, filtering out notifications."""
         if not self.process:
             return None
         
-        # This is a simplified implementation
-        # In a real implementation, you'd want proper async I/O
-        try:
-            line = self.process.stdout.readline()
-            return line if line else None
-        except Exception:
-            return None
+        # Read multiple lines until we get the response or timeout
+        max_lines = 50  # Prevent infinite loop
+        for _ in range(max_lines):
+            try:
+                line = await asyncio.get_event_loop().run_in_executor(
+                    None, self.process.stdout.readline
+                )
+                
+                if not line:
+                    break
+                    
+                line = line.strip()
+                if not line:
+                    continue
+                
+                try:
+                    data = json.loads(line)
+                    
+                    # Skip notifications
+                    if data.get("method") == "notifications/message":
+                        continue
+                    
+                    # Check if this is our response
+                    if request_id is not None and data.get("id") == request_id:
+                        return data
+                    elif request_id is None and "result" in data:
+                        return data
+                        
+                except json.JSONDecodeError:
+                    # Skip invalid JSON lines
+                    continue
+                    
+            except Exception as e:
+                logger.error(f"Error reading line from MCP server: {e}")
+                break
+        
+        return None
 
 
 class MCPTool:
@@ -184,6 +217,21 @@ class MCPClient:
         self.servers.clear()
         self.tools.clear()
         logger.info("Shut down all MCP servers")
+        
+    async def force_shutdown(self) -> None:
+        """Force immediate shutdown of all MCP servers without waiting."""
+        for server in self.servers.values():
+            if server.process and server.is_running:
+                try:
+                    server.process.kill()  # Immediate kill, no graceful termination
+                    server.is_running = False
+                except Exception as e:
+                    logger.warning(f"Error force-killing MCP server {server.config.name}: {e}")
+                    server.is_running = False
+        
+        self.servers.clear()
+        self.tools.clear()
+        logger.info("Force shut down all MCP servers")
     
     async def _discover_tools(self, server_name: str) -> None:
         """Discover available tools from an MCP server."""
@@ -195,7 +243,7 @@ class MCPClient:
             # Send tools/list request
             request = {
                 "jsonrpc": "2.0",
-                "id": self._next_request_id(),
+                "id": self._get_next_request_id(),
                 "method": "tools/list",
                 "params": {}
             }
@@ -221,11 +269,6 @@ class MCPClient:
         
         except Exception as e:
             logger.error(f"Failed to discover tools from {server_name}: {e}")
-    
-    def _next_request_id(self) -> int:
-        """Get next request ID."""
-        self.request_id += 1
-        return self.request_id
     
     async def call_tool(
         self,
@@ -259,7 +302,7 @@ class MCPClient:
             # Send tools/call request
             request = {
                 "jsonrpc": "2.0",
-                "id": self._next_request_id(),
+                "id": self._get_next_request_id(),
                 "method": "tools/call",
                 "params": {
                     "name": tool.name,

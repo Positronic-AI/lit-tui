@@ -30,6 +30,7 @@ class LitTuiApp(App):
     BINDINGS = [
         Binding("escape", "quit_with_confirmation", "Quit"),
         Binding("ctrl+q", "quit", "Force Quit", show=False),  # Hidden from footer
+        Binding("ctrl+x", "force_quit", "Force Quit Now", show=False),  # Immediate exit
         Binding("ctrl+n", "new_chat", "New Chat"),
         Binding("ctrl+o", "open_session", "Open"),
         Binding("ctrl+slash", "help", "Help"),
@@ -72,7 +73,18 @@ class LitTuiApp(App):
         """Handle force quit action (CTRL-Q)."""
         # Shutdown MCP services if available
         if hasattr(self.screen, 'mcp_client') and self.screen.mcp_client:
-            await self.screen.mcp_client.shutdown()
+            try:
+                # Add timeout to MCP shutdown to prevent hanging
+                await asyncio.wait_for(
+                    self.screen.mcp_client.shutdown(),
+                    timeout=3.0
+                )
+            except asyncio.TimeoutError:
+                import logging
+                logging.warning("MCP shutdown timed out, proceeding with exit")
+            except Exception as e:
+                import logging
+                logging.error(f"Error during MCP shutdown: {e}")
         self.exit()
     
     def action_quit_with_confirmation(self) -> None:
@@ -146,6 +158,17 @@ class LitTuiApp(App):
         if hasattr(self.screen, 'open_session'):
             await self.screen.open_session()
             
+    async def action_force_quit(self) -> None:
+        """Handle immediate force quit action (CTRL+X)."""
+        # Force shutdown MCP services immediately without waiting
+        if hasattr(self.screen, 'mcp_client') and self.screen.mcp_client:
+            try:
+                await self.screen.mcp_client.force_shutdown()
+            except Exception as e:
+                import logging
+                logging.error(f"Error during force MCP shutdown: {e}")
+        self.exit()
+        
     async def action_help(self) -> None:
         """Show help screen."""
         # TODO: Implement help screen
