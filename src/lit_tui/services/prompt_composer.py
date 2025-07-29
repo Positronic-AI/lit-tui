@@ -86,7 +86,29 @@ class PromptComposer:
                 
                 response = json.loads(response_json)
                 
+                # Get the system-prompt-composer generated prompt
+                composer_prompt = response.get('system_prompt', '')
+                
+                # Get user's custom system prompt from config
+                user_system_prompt = None
+                logger.info(f"🔍 Config object: {self.config}")
+                logger.info(f"🔍 Has system_prompt_content: {hasattr(self.config, 'system_prompt_content') if self.config else 'No config'}")
+                if self.config and hasattr(self.config, 'system_prompt_content'):
+                    logger.info(f"🔍 system_prompt_content value: {repr(self.config.system_prompt_content)}")
+                    user_system_prompt = self.config.system_prompt_content
+                
+                # Combine user custom prompt with system-prompt-composer
+                if user_system_prompt:
+                    combined_prompt = user_system_prompt + "\n\n---\n\n" + composer_prompt
+                else:
+                    combined_prompt = composer_prompt
+                
+                # Update the response with our combined prompt
+                response['system_prompt'] = combined_prompt
+                response['custom_prompt_used'] = bool(user_system_prompt)
+                
                 logger.info(f"✅ System prompt composed: {len(response.get('system_prompt', ''))} chars")
+                logger.info(f"📝 Custom prompt used: {bool(user_system_prompt)}")
                 if response.get('applied_modules'):
                     logger.info(f"Applied modules: {response['applied_modules']}")
                 if response.get('recognized_tools'):
@@ -138,13 +160,27 @@ class PromptComposer:
     ) -> Dict[str, Any]:
         """Generate a comprehensive fallback prompt when system-prompt-composer is unavailable."""
         
-        system_prompt = "You are a helpful AI assistant."
+        # Get user's custom system prompt from config
+        user_system_prompt = None
+        logger.info(f"🔍 [FALLBACK] Config object: {self.config}")
+        logger.info(f"🔍 [FALLBACK] Has system_prompt_content: {hasattr(self.config, 'system_prompt_content') if self.config else 'No config'}")
+        if self.config and hasattr(self.config, 'system_prompt_content'):
+            logger.info(f"🔍 [FALLBACK] system_prompt_content value: {repr(self.config.system_prompt_content)}")
+            user_system_prompt = self.config.system_prompt_content
+        
+        # Use user's custom prompt or default
+        if user_system_prompt:
+            base_prompt = user_system_prompt
+        else:
+            base_prompt = "You are a helpful AI assistant with access to filesystem and process management tools."
         
         if mcp_tools:
             # Use exact format from working lit-lib implementation
             tools_json = self._format_tools_for_prompt_detailed(mcp_tools)
             
-            system_prompt = f"""You have access to the following tools:
+            system_prompt = f"""{base_prompt}
+
+You have access to the following tools:
 
 {tools_json}
 
@@ -173,11 +209,14 @@ CRITICAL: The \\n in the content string represents actual newlines, not literal 
 
 Only use the tools when explicitly requested by the user or when they would significantly help with the user's request.
 When a user asks you to read or write files or access system resources, you should use the appropriate tool rather than saying you can't."""
+        else:
+            system_prompt = base_prompt
         
         return {
             "system_prompt": system_prompt,
-            "source": "fallback",
+            "source": "fallback_with_custom_prompt" if user_system_prompt else "fallback",
             "fallback": True,
+            "custom_prompt_used": bool(user_system_prompt),
             "version": "1.0.0-fallback"
         }
     
